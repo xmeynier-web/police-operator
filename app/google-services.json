@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "390289085067",
+    "project_id": "operator-supervisor-ops",
+    "storage_bucket": "operator-supervisor-ops.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:390289085067:android:6d4c3e25975dbfab143a8e",
+        "android_client_info": {
+          "package_name": "com.xavier.policeoperator"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQ6dF9_DyGcVO4VMENM_-pLlRlkxkU9SQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
