@@ -1,12 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.xavier.policeoperator">
 
-    <!-- Permissions de localisation -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    
-    <!-- Permissions Foreground Service (obligatoire Android 9+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -18,9 +15,8 @@
         android:label="Police Operator"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.PoliceOperator">
+        android:theme="@style/Theme.AppCompat.NoActionBar">
 
-        <!-- Service de suivi GPS en arrière-plan -->
         <service
             android:name=".LocationTrackingService"
             android:enabled="true"
@@ -36,5 +32,4 @@
             </intent-filter>
         </activity>
     </application>
-
 </manifest>
