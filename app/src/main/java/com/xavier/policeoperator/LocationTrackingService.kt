@@ -9,18 +9,15 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
+import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 
-/*
-    Module de Géolocalisation Temps Réel - Police Operator
-    Conception & Architecture : Xavier Meynier-Laloi
-*/
 class LocationTrackingService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private val db = FirebaseFirestore.getInstance()
-    private val unitId = "Unite_01" // Identifiant unique de l'unité terrain
+    private val unitId = "Unite_01"
 
     override fun onCreate() {
         super.onCreate()
@@ -47,24 +44,20 @@ class LocationTrackingService : Service() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 for (location in locationResult.locations) {
-                    val data = hashMapOf(
+                    val data = mapOf(
                         "latitude" to location.latitude,
                         "longitude" to location.longitude,
                         "status" to "Actif",
-                        "timestamp" to com.google.firebase.Timestamp.now()
+                        "equipment" to "Armement, PIE, Radio, Caméra piéton",
+                        "timestamp" to Timestamp.now()
                     )
-                    // Synchronisation instantanée Firestore (écoutée par police-supervisor)
-                    db.collection("units").document(unitId).set(data)
+                    db.collection("units").document(unitId).set(data, com.google.firebase.firestore.SetOptions.merge())
                 }
             }
         }
 
         try {
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback,
-                Looper.getMainLooper()
-            )
+            fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper())
         } catch (e: SecurityException) {
             e.printStackTrace()
         }
@@ -77,18 +70,12 @@ class LocationTrackingService : Service() {
                 "Canal Sécurisé - Suivi GPS Opérationnel",
                 NotificationManager.IMPORTANCE_LOW
             )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(serviceChannel)
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY
-    }
-
-    override fun onBind(intent: Intent?): IBinder? {
-        return null
-    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         super.onDestroy()
