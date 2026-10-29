@@ -8,7 +8,6 @@ import android.os.Bundle
 import android.graphics.Color
 import android.view.Gravity
 import android.widget.*
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -25,7 +24,6 @@ class MainActivity : AppCompatActivity() {
     private var currentStatusLabel = "En Patrouille"
     private var currentStatusColor = "#22bb33"
 
-    // Dictionnaire du matériel embarqué
     private val equipmentState = mutableMapOf(
         "Stop-Stick" to false, "Bouclier" to false, "GAIL" to false, "LBD" to false,
         "PIE" to false, "BTD" to false, "PSA" to false, "Casque" to false,
@@ -65,7 +63,7 @@ class MainActivity : AppCompatActivity() {
 
         val input = EditText(this).apply {
             hint = "Ex: ALPHA, Patrouille-01..."
-            setTextColor(Color.white)
+            setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#8e95a5"))
             setBackgroundColor(Color.parseColor("#1e2028"))
             setPadding(24, 24, 24, 24)
@@ -74,7 +72,7 @@ class MainActivity : AppCompatActivity() {
         val btnConnect = Button(this).apply {
             text = "Démarrer la prise de service"
             setBackgroundColor(Color.parseColor("#00a8ff"))
-            setTextColor(Color.white)
+            setTextColor(Color.WHITE)
             setPadding(0, 24, 0, 24)
             setOnClickListener {
                 val text = input.text.toString().trim()
@@ -107,11 +105,10 @@ class MainActivity : AppCompatActivity() {
             addView(rootLayout)
         }
 
-        // 1. Bouton SOS Principal
         val btnSos = Button(this).apply {
             text = "🚨 DÉCLENCHER UN SOS"
             setBackgroundColor(Color.parseColor("#ff2222"))
-            setTextColor(Color.white)
+            setTextColor(Color.WHITE)
             setOnClickListener {
                 if (currentStatusCode == "SOS_ACTIF") {
                     updateStatus("EN_PATROUILLE", "En Patrouille", "#22bb33")
@@ -123,7 +120,6 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(btnSos)
         rootLayout.addView(Space(this).apply { minimumHeight = 16 })
 
-        // 2. Bannière de Statut Actuel
         val statusCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(16, 16, 16, 16)
@@ -139,7 +135,7 @@ class MainActivity : AppCompatActivity() {
             text = "EN PATROUILLE"
             textSize = 18f
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.white)
+            setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
         }
         statusCard.addView(statusTitle)
@@ -147,7 +143,6 @@ class MainActivity : AppCompatActivity() {
         rootLayout.addView(statusCard)
         rootLayout.addView(Space(this).apply { minimumHeight = 16 })
 
-        // 3. Grille des Statuts
         val gridLayout = GridLayout(this).apply {
             columnCount = 2
             alignmentMode = GridLayout.ALIGN_BOUNDS
@@ -156,11 +151,11 @@ class MainActivity : AppCompatActivity() {
         statusList.forEach { s ->
             val btn = Button(this).apply {
                 text = s["label"]
-                setBackgroundColor(Color.parseColor(s["hex"]))
-                setTextColor(Color.white)
+                setBackgroundColor(Color.parseColor(s["hex"]!!))
+                setTextColor(Color.WHITE)
                 setOnClickListener {
-                    updateStatus(s["code"]!, s["label"]!, s["hex"]!)
-                    statusCard.setBackgroundColor(Color.parseColor(s["hex"]))
+                    updateStatus(s["code"]!!, s["label"]!!, s["hex"]!!)
+                    statusCard.setBackgroundColor(Color.parseColor(s["hex"]!!))
                     statusValue.text = s["label"]!!.uppercase()
                 }
             }
@@ -194,15 +189,12 @@ class MainActivity : AppCompatActivity() {
             if (snapshot != null && snapshot.exists()) {
                 val mission = snapshot.get("active_mission") as? Map<*, *>
                 if (mission != null) {
-                    // Mission CSU reçue en direct
                     val title = mission["title"] ?: mission["titre"] ?: "Intervention"
-                    Toast.makeText(this, "Nouvelle mission CSU : $title", slangDuration()).show()
+                    Toast.makeText(this, "Nouvelle mission CSU : $title", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
-
-    private fun slangDuration() = Toast.LENGTH_LONG
 
     private fun checkLocationPermissions(): Boolean {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
