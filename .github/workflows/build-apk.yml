@@ -7,6 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +20,7 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Set up Gradle
+    - name: Set up Gradle (Stable 8.5)
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.5'
