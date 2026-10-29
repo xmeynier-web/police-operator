@@ -3,11 +3,11 @@ package com.xavier.policeoperator
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.graphics.Color
-import android.view.Gravity
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -31,159 +31,128 @@ class MainActivity : AppCompatActivity() {
         "Trousse PS" to false, "Ethylo" to false, "Kit Stup" to false, "DSA" to false
     )
 
-    private val statusList = listOf(
-        mapOf("label" to "En Patrouille", "code" to "EN_PATROUILLE", "hex" to "#22bb33"),
-        mapOf("label" to "En Intervention", "code" to "EN_INTERVENTION", "hex" to "#ff8800"),
-        mapOf("label" to "Contrôle PR", "code" to "CONTROLE_PR", "hex" to "#f1c40f"),
-        mapOf("label" to "Transport Escorte", "code" to "TRANSPORT_ESCORTE", "hex" to "#00a8ff"),
-        mapOf("label" to "Attente Fourrière", "code" to "ATTENTE_FOURRIERE", "hex" to "#009688"),
-        mapOf("label" to "Escale Technique", "code" to "ESCALE_TECHNIQUE", "hex" to "#e91e63"),
-        mapOf("label" to "Retour au poste", "code" to "RETOUR_POSTE", "hex" to "#9c27b0"),
-        mapOf("label" to "Indisponible", "code" to "INDISPONIBLE", "hex" to "#777777")
-    )
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showLoginDialog()
     }
 
     private fun showLoginDialog() {
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 48, 48, 48)
-            setBackgroundColor(Color.parseColor("#121319"))
-        }
-
-        val title = TextView(this).apply {
-            text = "REZO+ // Connexion Équipement"
-            textSize = 18f
-            setTextColor(Color.parseColor("#00a8ff"))
-            setPadding(0, 0, 0, 24)
-            gravity = Gravity.CENTER
-        }
-
         val input = EditText(this).apply {
             hint = "Ex: ALPHA, Patrouille-01..."
             setTextColor(Color.WHITE)
             setHintTextColor(Color.parseColor("#8e95a5"))
-            setBackgroundColor(Color.parseColor("#1e2028"))
-            setPadding(24, 24, 24, 24)
+            setPadding(32, 32, 32, 32)
         }
 
-        val btnConnect = Button(this).apply {
-            text = "Démarrer la prise de service"
-            setBackgroundColor(Color.parseColor("#00a8ff"))
-            setTextColor(Color.WHITE)
-            setPadding(0, 24, 0, 24)
-            setOnClickListener {
+        AlertDialog.Builder(this)
+            .setTitle("REZO+ // Connexion Équipement")
+            .setMessage("Entrez votre indicatif radio :")
+            .setView(input)
+            .setCancelable(false)
+            .setPositiveButton("Démarrer") { _, _ ->
                 val text = input.text.toString().trim()
                 if (text.isNotEmpty()) {
                     unitId = text
-                    initDashboardUI()
+                    initDashboard()
                 } else {
-                    Toast.makeText(this@MainActivity, "Veuillez entrer un indicatif valide.", Toast.LENGTH_SHORT).show()
+                    showLoginDialog()
                 }
             }
-        }
+            .show()
 
-        layout.addView(title)
-        layout.addView(input)
-        layout.addView(Space(this).apply { minimumHeight = 24 })
-        layout.addView(btnConnect)
-
-        setContentView(layout)
         if (!checkLocationPermissions()) requestLocationPermissions()
     }
 
-    private fun initDashboardUI() {
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-            setBackgroundColor(Color.parseColor("#121319"))
-        }
+    private fun initDashboard() {
+        setContentView(R.layout.activity_main)
 
-        val scrollView = ScrollView(this).apply {
-            addView(rootLayout)
-        }
+        findViewById<TextView>(R.id.tvUnitTitle).text = "Unité : $unitId"
 
-        val btnSos = Button(this).apply {
-            text = "🚨 DÉCLENCHER UN SOS"
-            setBackgroundColor(Color.parseColor("#ff2222"))
-            setTextColor(Color.WHITE)
-            setOnClickListener {
-                if (currentStatusCode == "SOS_ACTIF") {
-                    updateStatus("EN_PATROUILLE", "En Patrouille", "#22bb33")
-                } else {
-                    updateStatus("SOS_ACTIF", "SOS ACTIF", "#ff2222")
-                }
+        // Bouton SOS
+        findViewById<Button>(R.id.btnSos).setOnClickListener {
+            if (currentStatusCode == "SOS_ACTIF") {
+                updateStatus("EN_PATROUILLE", "En Patrouille", "#22bb33")
+            } else {
+                updateStatus("SOS_ACTIF", "SOS ACTIF", "#dc2626")
             }
         }
-        rootLayout.addView(btnSos)
-        rootLayout.addView(Space(this).apply { minimumHeight = 16 })
 
-        val statusCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(16, 16, 16, 16)
-            setBackgroundColor(Color.parseColor("#22bb33"))
-        }
-        val statusTitle = TextView(this).apply {
-            text = "STATUT OPÉRATIONNEL ACTUEL"
-            textSize = 11f
-            setTextColor(Color.parseColor("#ffffff"))
-            gravity = Gravity.CENTER
-        }
-        val statusValue = TextView(this).apply {
-            text = "EN PATROUILLE"
-            textSize = 18f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-        }
-        statusCard.addView(statusTitle)
-        statusCard.addView(statusValue)
-        rootLayout.addView(statusCard)
-        rootLayout.addView(Space(this).apply { minimumHeight = 16 })
+        // Boutons de Statut
+        findViewById<Button>(R.id.btnPatrouille).setOnClickListener { updateStatus("EN_PATROUILLE", "En Patrouille", "#22bb33") }
+        findViewById<Button>(R.id.btnIntervention).setOnClickListener { updateStatus("EN_INTERVENTION", "En Intervention", "#ff8800") }
+        findViewById<Button>(R.id.btnControlePr).setOnClickListener { updateStatus("CONTROLE_PR", "Contrôle PR", "#009688") }
+        findViewById<Button>(R.id.btnTransport).setOnClickListener { updateStatus("TRANSPORT_ESCORTE", "Transport", "#00a8ff") }
+        findViewById<Button>(R.id.btnEscale).setOnClickListener { updateStatus("ESCALE_TECHNIQUE", "Escale", "#e91e63") }
+        findViewById<Button>(R.id.btnRetourPoste).setOnClickListener { updateStatus("RETOUR_POSTE", "Retour au poste", "#9c27b0") }
+        findViewById<Button>(R.id.btnIndisponible).setOnClickListener { updateStatus("INDISPONIBLE", "Indisponible", "#555555") }
 
-        val gridLayout = GridLayout(this).apply {
-            columnCount = 2
-            alignmentMode = GridLayout.ALIGN_BOUNDS
-        }
-        
-        statusList.forEach { s ->
-            val btn = Button(this).apply {
-                text = s["label"]
-                setBackgroundColor(Color.parseColor(s["hex"]!!))
-                setTextColor(Color.WHITE)
-                setOnClickListener {
-                    updateStatus(s["code"]!!, s["label"]!!, s["hex"]!!)
-                    statusCard.setBackgroundColor(Color.parseColor(s["hex"]!!))
-                    statusValue.text = s["label"]!!.uppercase()
+        // Déconnexion
+        findViewById<ImageView>(R.id.btnLogout).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Fin de service")
+                .setMessage("Voulez-vous vraiment quitter le service ?")
+                .setPositiveButton("Confirmer") { _, _ ->
+                    db.collection("units").document(unitId).delete()
+                    recreate()
                 }
-            }
-            gridLayout.addView(btn)
+                .setNegativeButton("Annuler", null)
+                .show()
         }
-        rootLayout.addView(gridLayout)
 
-        setContentView(scrollView)
+        // Liaison du matériel embarqué (Checkboxes)
+        setupEquipmentCheckbox(R.id.cbStopStick, "Stop-Stick")
+        setupEquipmentCheckbox(R.id.cbBouclier, "Bouclier")
+        setupEquipmentCheckbox(R.id.cbGail, "GAIL")
+        setupEquipmentCheckbox(R.id.cbLbd, "LBD")
+        setupEquipmentCheckbox(R.id.cbPie, "PIE")
+        setupEquipmentCheckbox(R.id.cbBtd, "BTD")
+        setupEquipmentCheckbox(R.id.cbPsa, "PSA")
+        setupEquipmentCheckbox(R.id.cbCasque, "Casque")
+        setupEquipmentCheckbox(R.id.cbTroussePs, "Trousse PS")
+        setupEquipmentCheckbox(R.id.cbEthylo, "Ethylo")
+        setupEquipmentCheckbox(R.id.cbKitStup, "Kit Stup")
+        setupEquipmentCheckbox(R.id.cbDsa, "DSA")
+
         startTrackingService()
         listenToMissions()
+        updateUIState()
+    }
+
+    private fun setupEquipmentCheckbox(checkboxId: Int, key: String) {
+        findViewById<CheckBox>(checkboxId)?.setOnCheckedChangeListener { _, isChecked ->
+            equipmentState[key] = isChecked
+            syncToFirestore()
+        }
     }
 
     private fun updateStatus(code: String, label: String, hex: String) {
         currentStatusCode = code
         currentStatusLabel = label
         currentStatusColor = hex
+        updateUIState()
+        syncToFirestore()
+        Toast.makeText(this, "Statut : $label", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateUIState() {
+        val card = findViewById<LinearLayout>(R.id.cardCurrentStatus)
+        val valueTv = findViewById<TextView>(R.id.tvStatusValue)
         
+        card?.setBackgroundColor(Color.parseColor(currentStatusColor))
+        valueTv?.text = currentStatusLabel.uppercase()
+    }
+
+    private fun syncToFirestore() {
+        if (unitId.isEmpty()) return
         val data = mapOf(
-            "status" to code,
-            "statusLabel" to label,
-            "statusColor" to hex,
+            "status" to currentStatusCode,
+            "statusLabel" to currentStatusLabel,
+            "statusColor" to currentStatusColor,
             "equipment" to equipmentState,
-            "sos" to (code == "SOS_ACTIF"),
+            "sos" to (currentStatusCode == "SOS_ACTIF"),
             "timestamp" to FieldValue.serverTimestamp()
         )
         db.collection("units").document(unitId).set(data, SetOptions.merge())
-        Toast.makeText(this, "Statut : $label", Toast.LENGTH_SHORT).show()
     }
 
     private fun listenToMissions() {
@@ -192,7 +161,7 @@ class MainActivity : AppCompatActivity() {
                 val mission = snapshot.get("active_mission") as? Map<*, *>
                 if (mission != null) {
                     val title = mission["title"] ?: mission["titre"] ?: "Intervention"
-                    Toast.makeText(this, "Nouvelle mission CSU : $title", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Mission CSU reçue : $title", Toast.LENGTH_LONG).show()
                 }
             }
         }
