@@ -9,7 +9,7 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
-import com.google.firebase.Timestamp
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
@@ -28,7 +28,7 @@ class LocationTrackingService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, "LocationServiceChannel")
             .setContentTitle("Police Operator - Actif")
-            .setContentText("Transmission GPS haute précision opérationnelle...")
+            .setContentText("Transmission GPS haute précision (Firestore)...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .build()
@@ -56,7 +56,7 @@ class LocationTrackingService : Service() {
                         "latitude" to location.latitude,
                         "longitude" to location.longitude,
                         "status" to currentStatus,
-                        "timestamp" to Timestamp.now()
+                        "timestamp" to FieldValue.serverTimestamp()
                     )
                     db.collection("units").document(unitId).set(data, SetOptions.merge())
                 }
