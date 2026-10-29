@@ -18,7 +18,8 @@ class LocationTrackingService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private val db = FirebaseFirestore.getInstance()
-    private val unitId = "ALPHA"
+    private var unitId = "ALPHA"
+    private var currentStatus = "EN_PATROUILLE"
 
     override fun onCreate() {
         super.onCreate()
@@ -27,13 +28,19 @@ class LocationTrackingService : Service() {
 
         val notification: Notification = NotificationCompat.Builder(this, "LocationServiceChannel")
             .setContentTitle("Police Operator - Actif")
-            .setContentText("Transmission de la position GPS opérationnelle...")
+            .setContentText("Transmission GPS haute précision opérationnelle...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .build()
 
         startForeground(1, notification)
         startLocationUpdates()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra("UNIT_ID")?.let { unitId = it }
+        intent?.getStringExtra("CURRENT_STATUS")?.let { currentStatus = it }
+        return START_STICKY
     }
 
     private fun startLocationUpdates() {
@@ -48,7 +55,7 @@ class LocationTrackingService : Service() {
                     val data = mapOf(
                         "latitude" to location.latitude,
                         "longitude" to location.longitude,
-                        "status" to "En Patrouille",
+                        "status" to currentStatus,
                         "timestamp" to Timestamp.now()
                     )
                     db.collection("units").document(unitId).set(data, SetOptions.merge())
@@ -74,7 +81,6 @@ class LocationTrackingService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
