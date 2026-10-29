@@ -14,12 +14,13 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 class MainActivity : AppCompatActivity() {
 
     private val LOCATION_PERMISSION_REQUEST_CODE = 1001
     private val db = FirebaseFirestore.getInstance()
-    private val unitId = "Unite_01"
+    private val unitId = "ALPHA"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,31 +28,31 @@ class MainActivity : AppCompatActivity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
-            setBackgroundColor(Color.parseColor("#0f172a"))
+            setBackgroundColor(Color.parseColor("#121319"))
         }
 
         val title = TextView(this).apply {
             text = "Police Operator"
             textSize = 22f
-            setTextColor(Color.parseColor("#06b6d4"))
+            setTextColor(Color.parseColor("#ff7a00"))
             setPadding(0, 0, 0, 16)
         }
 
         val statusText = TextView(this).apply {
-            text = "Statut : Prêt au déploiement"
+            text = "Statut : Unité ALPHA prête"
             textSize = 14f
-            setTextColor(Color.parseColor("#94a3b8"))
+            setTextColor(Color.parseColor("#8e95a5"))
             setPadding(0, 0, 0, 32)
         }
 
         val btnStart = Button(this).apply {
             text = "Démarrer le Tracking GPS"
-            setBackgroundColor(Color.parseColor("#06b6d4"))
-            setTextColor(Color.parseColor("#0f172a"))
+            setBackgroundColor(Color.parseColor("#ff7a00"))
+            setTextColor(Color.parseColor("#ffffff"))
             setOnClickListener {
                 if (checkLocationPermissions()) {
                     startTrackingService()
-                    statusText.text = "Statut : Actif sur le terrain"
+                    statusText.text = "Statut : En Patrouille (GPS Actif)"
                 } else {
                     requestLocationPermissions()
                 }
@@ -60,19 +61,19 @@ class MainActivity : AppCompatActivity() {
 
         val btnSos = Button(this).apply {
             text = "🚨 ALERTE SOS / URGENCE"
-            setBackgroundColor(Color.parseColor("#ef4444"))
+            setBackgroundColor(Color.parseColor("#dc2626"))
             setTextColor(Color.parseColor("#ffffff"))
             setOnClickListener {
                 triggerSos()
-                statusText.text = "STATUT : ALERTE SOS EMPISE !"
+                statusText.text = "STATUT : ALERTE SOS TRANSMISE !"
             }
         }
         btnSos.setPadding(0, 24, 0, 0)
 
         val footer = TextView(this).apply {
-            text = "Conception & Architecture : Xavier Meynier-Laloi"
+            text = "Direction de la Police Municipale • Xavier Meynier-Laloi"
             textSize = 11f
-            setTextColor(Color.parseColor("#64748b"))
+            setTextColor(Color.parseColor("#8e95a5"))
             setPadding(0, 64, 0, 0)
             gravity = Gravity.CENTER_HORIZONTAL
         }
@@ -109,6 +110,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerSos() {
-        db.collection("units").document(unitId).update("status", "SOS")
+        val data = mapOf("status" to "SOS")
+        db.collection("units").document(unitId).set(data, SetOptions.merge())
     }
 }
