@@ -11,13 +11,14 @@ import androidx.core.app.NotificationCompat
 import com.google.android.gms.location.*
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 
 class LocationTrackingService : Service() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private val db = FirebaseFirestore.getInstance()
-    private val unitId = "Unite_01"
+    private val unitId = "ALPHA"
 
     override fun onCreate() {
         super.onCreate()
@@ -47,11 +48,10 @@ class LocationTrackingService : Service() {
                     val data = mapOf(
                         "latitude" to location.latitude,
                         "longitude" to location.longitude,
-                        "status" to "Actif",
-                        "equipment" to "Armement, PIE, Radio, Caméra piéton",
+                        "status" to "En Patrouille",
                         "timestamp" to Timestamp.now()
                     )
-                    db.collection("units").document(unitId).set(data, com.google.firebase.firestore.SetOptions.merge())
+                    db.collection("units").document(unitId).set(data, SetOptions.merge())
                 }
             }
         }
