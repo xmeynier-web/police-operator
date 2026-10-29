@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121319"
+    android:fillViewport="true"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- En-tête : Unité et Déconnexion -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="12dp">
+
+            <TextView
+                android:id="@+id/tvUnitTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Unité : ALPHA"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <ImageView
+                android:id="@+id/btnLogout"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Fin de service"
+                android:src="@android:drawable/ic_menu_revert"
+                android:tint="#FFFFFF" />
+        </LinearLayout>
+
+        <!-- Bouton SOS Principal -->
+        <Button
+            android:id="@+id/btnSos"
+            android:layout_width="match_parent"
+            android:layout_height="58dp"
+            android:layout_marginBottom="14dp"
+            android:backgroundTint="#dc2626"
+            android:text="⚠️ DÉCLENCHER UN SOS"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <!-- Bannière de Statut Actuel -->
+        <LinearLayout
+            android:id="@+id/cardCurrentStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:background="#22bb33"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:elevation="4dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="STATUT OPÉRATIONNEL ACTUEL"
+                android:textColor="#E0FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvStatusValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingTop="4dp"
+                text="EN PATROUILLE"
+                android:text="EN PATROUILLE"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvLocationStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:paddingTop="2dp"
+                android:text="Initialisation GPS..."
+                android:textColor="#B3FFFFFF"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Titre section statuts -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="Modifier le statut :"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- Grille des Statuts (2 colonnes) -->
+        <GridLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="2"
+            android:useDefaultMargins="true">
+
+            <Button
+                android:id="@+id/btnPatrouille"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#22bb33"
+                android:text="En Patrouille"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnIntervention"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#ff8800"
+                android:text="En Intervention"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnControlePr"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#009688"
+                android:text="Contrôle PR"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnTransport"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#00a8ff"
+                android:text="Transport"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnEscale"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#e91e63"
+                android:text="Escale"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnRetourPoste"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:backgroundTint="#9c27b0"
+                android:text="Retour au poste"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnIndisponible"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_columnWeight="1"
+                android:layout_columnSpan="2"
+                android:backgroundTint="#555555"
+                android:text="Indisponible"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+        </GridLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="14dp"
+            android:background="#2e3240" />
+
+        <!-- Titre section Matériel -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="Contrôle du Matériel Embarqué :"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <!-- Grille du Matériel (Cases à cocher 2 colonnes) -->
+        <GridLayout
+            android:id="@+id/gridEquipment"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:columnCount="2"
+            android:useDefaultMargins="true">
+
+            <CheckBox
+                android:id="@+id/cbStopStick"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Stop-Stick"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbBouclier"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Bouclier"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbGail"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="GAIL"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbLbd"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="LBD"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbPie"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="PIE"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbBtd"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="BTD"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbPsa"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="PSA"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbCasque"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Casque"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbTroussePs"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Trousse PS"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbEthylo"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Ethylo"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbKitStup"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="Kit Stup"
+                android:textColor="#FFFFFF" />
+
+            <CheckBox
+                android:id="@+id/cbDsa"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_columnWeight="1"
+                android:text="DSA"
+                android:textColor="#FFFFFF" />
+        </GridLayout>
+
+    </LinearLayout>
+</ScrollView>
