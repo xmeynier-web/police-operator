@@ -11,6 +11,7 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 
@@ -178,7 +179,8 @@ class MainActivity : AppCompatActivity() {
             "statusLabel" to label,
             "statusColor" to hex,
             "equipment" to equipmentState,
-            "sos" to (code == "SOS_ACTIF")
+            "sos" to (code == "SOS_ACTIF"),
+            "timestamp" to FieldValue.serverTimestamp()
         )
         db.collection("units").document(unitId).set(data, SetOptions.merge())
         Toast.makeText(this, "Statut : $label", Toast.LENGTH_SHORT).show()
