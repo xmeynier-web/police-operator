@@ -20,6 +20,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,10 +36,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Badge
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -52,6 +57,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.geotracker.model.LocationRepository
 import com.example.geotracker.model.LocationTelemetry
+import com.example.geotracker.model.OperationalStatus
 import com.example.geotracker.service.LocationService
 import java.util.Locale
 
@@ -103,11 +110,14 @@ fun GeoTrackerMainScreen() {
     val context = LocalContext.current
     val telemetry by LocationRepository.telemetry.collectAsState()
     var unitIdInput by remember { mutableStateOf(telemetry.unitId) }
+    var missionNoteInput by remember { mutableStateOf(telemetry.missionNote) }
 
-    fun effectiveUnitId(): String {
-        val cleaned = unitIdInput.trim().ifEmpty { "UNITE-01" }
-        LocationRepository.setUnitId(cleaned)
-        return cleaned
+    fun syncInputsToRepository(): Pair<String, String> {
+        val cleanedId = unitIdInput.trim().ifEmpty { "UNITE-01" }
+        val cleanedNote = missionNoteInput.trim()
+        LocationRepository.setUnitId(cleanedId)
+        LocationRepository.updateMissionNote(cleanedNote)
+        return cleanedId to cleanedNote
     }
 
     LaunchedEffect(Unit) {
@@ -133,7 +143,8 @@ fun GeoTrackerMainScreen() {
                 Toast.LENGTH_LONG
             ).show()
         }
-        LocationService.start(context, effectiveUnitId())
+        val (id, note) = syncInputsToRepository()
+        LocationService.start(context, id, telemetry.operationalStatus, note)
     }
 
     val foregroundPermissionLauncher = rememberLauncherForActivityResult(
@@ -155,7 +166,8 @@ fun GeoTrackerMainScreen() {
                     return@rememberLauncherForActivityResult
                 }
             }
-            LocationService.start(context, effectiveUnitId())
+            val (id, note) = syncInputsToRepository()
+            LocationService.start(context, id, telemetry.operationalStatus, note)
         } else {
             Toast.makeText(
                 context,
@@ -218,10 +230,22 @@ fun GeoTrackerMainScreen() {
         ) {
             UnitIdentityAndSyncCard(
                 unitId = unitIdInput,
-                enabled = !telemetry.isTracking,
+                missionNote = missionNoteInput,
+                unitIdEnabled = !telemetry.isTracking,
                 lastSyncFormatted = telemetry.lastSyncFormatted,
                 lastSyncError = telemetry.lastSyncError,
-                onUnitIdChange = { unitIdInput = it }
+                onUnitIdChange = { unitIdInput = it },
+                onMissionNoteChange = {
+                    missionNoteInput = it
+                    LocationRepository.updateMissionNote(it)
+                }
+            )
+
+            OperationalStatusCard(
+                selectedStatus = telemetry.operationalStatus,
+                onSelectStatus = { status ->
+                    LocationRepository.updateOperationalStatus(status)
+                }
             )
 
             StatusBanner(telemetry = telemetry)
@@ -248,8 +272,70 @@ fun GeoTrackerMainScreen() {
             ActionControls(
                 isTracking = telemetry.isTracking,
                 onStartClick = { requestPermissionsAndStart() },
-                onStopClick = { LocationService.stop(context, effectiveUnitId()) }
+                onStopClick = {
+                    val (id, note) = syncInputsToRepository()
+                    LocationService.stop(context, id, telemetry.operationalStatus, note)
+                }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OperationalStatusCard(
+    selectedStatus: OperationalStatus,
+    onSelectStatus: (OperationalStatus) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.Flag,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "STATUT OPÉRATIONNEL",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OperationalStatus.entries.forEach { status ->
+                    val isSelected = status == selectedStatus
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { onSelectStatus(status) },
+                        label = { Text(status.label) },
+                        leadingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Outlined.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else {
+                            null
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -257,10 +343,12 @@ fun GeoTrackerMainScreen() {
 @Composable
 private fun UnitIdentityAndSyncCard(
     unitId: String,
-    enabled: Boolean,
+    missionNote: String,
+    unitIdEnabled: Boolean,
     lastSyncFormatted: String,
     lastSyncError: String?,
-    onUnitIdChange: (String) -> Unit
+    onUnitIdChange: (String) -> Unit,
+    onMissionNoteChange: (String) -> Unit
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -275,11 +363,22 @@ private fun UnitIdentityAndSyncCard(
             OutlinedTextField(
                 value = unitId,
                 onValueChange = onUnitIdChange,
-                enabled = enabled,
+                enabled = unitIdEnabled,
                 singleLine = true,
                 label = { Text("Identifiant unité / indicatif") },
                 leadingIcon = {
                     Icon(imageVector = Icons.Outlined.Badge, contentDescription = null)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = missionNote,
+                onValueChange = onMissionNoteChange,
+                singleLine = true,
+                label = { Text("Secteur / note opérationnelle (optionnel)") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Outlined.Description, contentDescription = null)
                 },
                 modifier = Modifier.fillMaxWidth()
             )
@@ -348,7 +447,11 @@ private fun StatusBanner(telemetry: LocationTelemetry) {
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = if (telemetry.isTracking) "SUIVI ACTIF" else "SUIVI INACTIF",
+                    text = if (telemetry.isTracking) {
+                        "SUIVI ACTIF · ${telemetry.operationalStatus.label.uppercase(Locale.FRANCE)}"
+                    } else {
+                        "SUIVI INACTIF"
+                    },
                     color = contentColor,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.labelLarge
