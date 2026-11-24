@@ -14,31 +14,41 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.example.geotracker.data.FirestoreLocationUploader
 import com.example.geotracker.location.ActiveLocationTracker
+import com.example.geotracker.location.GpsSample
 import com.example.geotracker.model.LocationRepository
 import com.example.geotracker.ui.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class LocationService : Service() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val uploader = FirestoreLocationUploader()
     private lateinit var locationTracker: ActiveLocationTracker
+    private var currentUnitId: String = "UNITE-01"
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
 
         locationTracker = ActiveLocationTracker(this) { sample ->
-            LocationRepository.updateLocation(
-                latitude = sample.latitude,
-                longitude = sample.longitude,
-                accuracyMeters = sample.accuracyMeters,
-                speedMetersPerSec = sample.speedMetersPerSec,
-                bearingDegrees = sample.bearingDegrees,
-                altitudeMeters = sample.altitudeMeters
-            )
+            handleNewSample(sample)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_UNIT_ID)?.let { requestedId ->
+            if (requestedId.isNotBlank()) {
+                currentUnitId = requestedId.trim()
+                LocationRepository.setUnitId(currentUnitId)
+            }
+        }
+
         if (intent?.action == ACTION_STOP) {
             stopTrackingAndService()
             return START_NOT_STICKY
@@ -53,7 +63,7 @@ class LocationService : Service() {
             true
         }
 
-        val notification = buildNotification()
+        val notification = buildNotification(currentUnitId)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
@@ -71,16 +81,46 @@ class LocationService : Service() {
         return START_STICKY
     }
 
+    private fun handleNewSample(sample: GpsSample) {
+        LocationRepository.updateLocation(
+            latitude = sample.latitude,
+            longitude = sample.longitude,
+            accuracyMeters = sample.accuracyMeters,
+            speedMetersPerSec = sample.speedMetersPerSec,
+            bearingDegrees = sample.bearingDegrees,
+            altitudeMeters = sample.altitudeMeters
+        )
+
+        val unitIdSnapshot = currentUnitId
+        serviceScope.launch {
+            val result = uploader.uploadSample(
+                unitId = unitIdSnapshot,
+                sample = sample,
+                isTracking = true
+            )
+            result.fold(
+                onSuccess = { LocationRepository.recordSyncSuccess() },
+                onFailure = { err -> LocationRepository.recordSyncError(err.localizedMessage) }
+            )
+        }
+    }
+
     private fun stopTrackingAndService() {
         locationTracker.stop()
+        val unitIdSnapshot = currentUnitId
         LocationRepository.setTrackingStopped()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+
+        serviceScope.launch {
+            uploader.markTrackingStopped(unitIdSnapshot)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
     }
 
     override fun onDestroy() {
         locationTracker.stop()
         LocationRepository.setTrackingStopped()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -100,7 +140,7 @@ class LocationService : Service() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(unitId: String): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -113,6 +153,7 @@ class LocationService : Service() {
 
         val stopIntent = Intent(this, LocationService::class.java).apply {
             action = ACTION_STOP
+            putExtra(EXTRA_UNIT_ID, unitId)
         }
         val stopPendingIntent = PendingIntent.getService(
             this,
@@ -122,8 +163,8 @@ class LocationService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Géolocalisation active")
-            .setContentText("Suivi GPS en temps réel en cours...")
+            .setContentTitle("Géolocalisation active · $unitId")
+            .setContentText("Synchronisation GPS vers Firestore en cours...")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Arrêter", stopPendingIntent)
@@ -135,9 +176,12 @@ class LocationService : Service() {
         const val CHANNEL_ID = "geotracker_active_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.example.geotracker.action.STOP"
+        const val EXTRA_UNIT_ID = "com.example.geotracker.extra.UNIT_ID"
 
-        fun start(context: Context) {
-            val intent = Intent(context, LocationService::class.java)
+        fun start(context: Context, unitId: String) {
+            val intent = Intent(context, LocationService::class.java).apply {
+                putExtra(EXTRA_UNIT_ID, unitId)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -145,9 +189,10 @@ class LocationService : Service() {
             }
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, unitId: String) {
             val intent = Intent(context, LocationService::class.java).apply {
                 action = ACTION_STOP
+                putExtra(EXTRA_UNIT_ID, unitId)
             }
             context.startService(intent)
         }
