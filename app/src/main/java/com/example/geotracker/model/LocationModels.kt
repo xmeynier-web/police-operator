@@ -27,6 +27,7 @@ enum class OperationalStatus(
 data class LocationTelemetry(
     val unitId: String = "UNITE-01",
     val operationalStatus: OperationalStatus = OperationalStatus.PATROUILLE,
+    val missionNote: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracyMeters: Float? = null,
@@ -58,6 +59,10 @@ object LocationRepository {
 
     fun updateOperationalStatus(status: OperationalStatus) {
         _telemetry.update { it.copy(operationalStatus = status) }
+    }
+
+    fun updateMissionNote(note: String) {
+        _telemetry.update { it.copy(missionNote = note.trim()) }
     }
 
     fun setBackgroundPermissionState(granted: Boolean) {
