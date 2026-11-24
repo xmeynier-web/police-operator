@@ -18,11 +18,15 @@ import com.example.geotracker.data.FirestoreLocationUploader
 import com.example.geotracker.location.ActiveLocationTracker
 import com.example.geotracker.location.GpsSample
 import com.example.geotracker.model.LocationRepository
+import com.example.geotracker.model.OperationalStatus
 import com.example.geotracker.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class LocationService : Service() {
@@ -30,7 +34,13 @@ class LocationService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val uploader = FirestoreLocationUploader()
     private lateinit var locationTracker: ActiveLocationTracker
+    private var metadataObserverJob: Job? = null
+
     private var currentUnitId: String = "UNITE-01"
+    private var currentStatus: OperationalStatus = OperationalStatus.PATROUILLE
+    private var currentNote: String = ""
+    private var isServiceTracking: Boolean = false
+    private var hasInitializedMetadataObserver: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -38,6 +48,37 @@ class LocationService : Service() {
 
         locationTracker = ActiveLocationTracker(this) { sample ->
             handleNewSample(sample)
+        }
+
+        observeMetadataChanges()
+    }
+
+    private fun observeMetadataChanges() {
+        metadataObserverJob = serviceScope.launch {
+            LocationRepository.telemetry
+                .map { it.operationalStatus to it.missionNote }
+                .distinctUntilChanged()
+                .collect { (newStatus, newNote) ->
+                    currentStatus = newStatus
+                    currentNote = newNote
+                    if (!hasInitializedMetadataObserver) {
+                        hasInitializedMetadataObserver = true
+                        return@collect
+                    }
+                    if (isServiceTracking) {
+                        updateNotification(currentUnitId, currentStatus, currentNote)
+                        val result = uploader.updateOperationalStatusOnly(
+                            unitId = currentUnitId,
+                            operationalStatus = currentStatus,
+                            missionNote = currentNote,
+                            isTracking = true
+                        )
+                        result.fold(
+                            onSuccess = { LocationRepository.recordSyncSuccess() },
+                            onFailure = { err -> LocationRepository.recordSyncError(err.localizedMessage) }
+                        )
+                    }
+                }
         }
     }
 
@@ -47,6 +88,17 @@ class LocationService : Service() {
                 currentUnitId = requestedId.trim()
                 LocationRepository.setUnitId(currentUnitId)
             }
+        }
+
+        intent?.getStringExtra(EXTRA_OPERATIONAL_STATUS)?.let { rawStatus ->
+            val parsed = OperationalStatus.fromCode(rawStatus)
+            currentStatus = parsed
+            LocationRepository.updateOperationalStatus(parsed)
+        }
+
+        intent?.getStringExtra(EXTRA_MISSION_NOTE)?.let { rawNote ->
+            currentNote = rawNote.trim()
+            LocationRepository.updateMissionNote(currentNote)
         }
 
         if (intent?.action == ACTION_STOP) {
@@ -63,7 +115,7 @@ class LocationService : Service() {
             true
         }
 
-        val notification = buildNotification(currentUnitId)
+        val notification = buildNotification(currentUnitId, currentStatus, currentNote)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
@@ -75,6 +127,7 @@ class LocationService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
+        isServiceTracking = true
         LocationRepository.setTrackingStarted(hasBackground)
         locationTracker.start()
 
@@ -92,9 +145,14 @@ class LocationService : Service() {
         )
 
         val unitIdSnapshot = currentUnitId
+        val statusSnapshot = currentStatus
+        val noteSnapshot = currentNote
+
         serviceScope.launch {
             val result = uploader.uploadSample(
                 unitId = unitIdSnapshot,
+                operationalStatus = statusSnapshot,
+                missionNote = noteSnapshot,
                 sample = sample,
                 isTracking = true
             )
@@ -106,18 +164,27 @@ class LocationService : Service() {
     }
 
     private fun stopTrackingAndService() {
+        isServiceTracking = false
         locationTracker.stop()
         val unitIdSnapshot = currentUnitId
+        val statusSnapshot = currentStatus
+        val noteSnapshot = currentNote
         LocationRepository.setTrackingStopped()
 
         serviceScope.launch {
-            uploader.markTrackingStopped(unitIdSnapshot)
+            uploader.markTrackingStopped(
+                unitId = unitIdSnapshot,
+                operationalStatus = statusSnapshot,
+                missionNote = noteSnapshot
+            )
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }
 
     override fun onDestroy() {
+        isServiceTracking = false
+        metadataObserverJob?.cancel()
         locationTracker.stop()
         LocationRepository.setTrackingStopped()
         serviceScope.cancel()
@@ -140,7 +207,20 @@ class LocationService : Service() {
         }
     }
 
-    private fun buildNotification(unitId: String): Notification {
+    private fun updateNotification(
+        unitId: String,
+        status: OperationalStatus,
+        note: String
+    ) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(NOTIFICATION_ID, buildNotification(unitId, status, note))
+    }
+
+    private fun buildNotification(
+        unitId: String,
+        status: OperationalStatus,
+        note: String
+    ): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -154,6 +234,8 @@ class LocationService : Service() {
         val stopIntent = Intent(this, LocationService::class.java).apply {
             action = ACTION_STOP
             putExtra(EXTRA_UNIT_ID, unitId)
+            putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
+            putExtra(EXTRA_MISSION_NOTE, note)
         }
         val stopPendingIntent = PendingIntent.getService(
             this,
@@ -162,9 +244,15 @@ class LocationService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val detailText = if (note.isNotBlank()) {
+            "Statut : ${status.label} · $note"
+        } else {
+            "Statut : ${status.label} · Sync Firestore"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Géolocalisation active · $unitId")
-            .setContentText("Synchronisation GPS vers Firestore en cours...")
+            .setContentText(detailText)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Arrêter", stopPendingIntent)
@@ -177,10 +265,19 @@ class LocationService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.example.geotracker.action.STOP"
         const val EXTRA_UNIT_ID = "com.example.geotracker.extra.UNIT_ID"
+        const val EXTRA_OPERATIONAL_STATUS = "com.example.geotracker.extra.OPERATIONAL_STATUS"
+        const val EXTRA_MISSION_NOTE = "com.example.geotracker.extra.MISSION_NOTE"
 
-        fun start(context: Context, unitId: String) {
+        fun start(
+            context: Context,
+            unitId: String,
+            status: OperationalStatus,
+            missionNote: String
+        ) {
             val intent = Intent(context, LocationService::class.java).apply {
                 putExtra(EXTRA_UNIT_ID, unitId)
+                putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
+                putExtra(EXTRA_MISSION_NOTE, missionNote)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -189,10 +286,17 @@ class LocationService : Service() {
             }
         }
 
-        fun stop(context: Context, unitId: String) {
+        fun stop(
+            context: Context,
+            unitId: String,
+            status: OperationalStatus,
+            missionNote: String
+        ) {
             val intent = Intent(context, LocationService::class.java).apply {
                 action = ACTION_STOP
                 putExtra(EXTRA_UNIT_ID, unitId)
+                putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
+                putExtra(EXTRA_MISSION_NOTE, missionNote)
             }
             context.startService(intent)
         }
