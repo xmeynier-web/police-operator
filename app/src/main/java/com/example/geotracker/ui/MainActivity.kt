@@ -33,6 +33,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Badge
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.GpsFixed
@@ -53,6 +56,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -62,6 +66,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,8 +102,15 @@ class MainActivity : ComponentActivity() {
 fun GeoTrackerMainScreen() {
     val context = LocalContext.current
     val telemetry by LocationRepository.telemetry.collectAsState()
+    var unitIdInput by remember { mutableStateOf(telemetry.unitId) }
 
-    fun refreshBackgroundPermissionStatus() {
+    fun effectiveUnitId(): String {
+        val cleaned = unitIdInput.trim().ifEmpty { "UNITE-01" }
+        LocationRepository.setUnitId(cleaned)
+        return cleaned
+    }
+
+    LaunchedEffect(Unit) {
         val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ContextCompat.checkSelfPermission(
                 context,
@@ -106,10 +120,6 @@ fun GeoTrackerMainScreen() {
             true
         }
         LocationRepository.setBackgroundPermissionState(granted)
-    }
-
-    LaunchedEffect(Unit) {
-        refreshBackgroundPermissionStatus()
     }
 
     val backgroundPermissionLauncher = rememberLauncherForActivityResult(
@@ -123,7 +133,7 @@ fun GeoTrackerMainScreen() {
                 Toast.LENGTH_LONG
             ).show()
         }
-        LocationService.start(context)
+        LocationService.start(context, effectiveUnitId())
     }
 
     val foregroundPermissionLauncher = rememberLauncherForActivityResult(
@@ -145,7 +155,7 @@ fun GeoTrackerMainScreen() {
                     return@rememberLauncherForActivityResult
                 }
             }
-            LocationService.start(context)
+            LocationService.start(context, effectiveUnitId())
         } else {
             Toast.makeText(
                 context,
@@ -206,6 +216,14 @@ fun GeoTrackerMainScreen() {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            UnitIdentityAndSyncCard(
+                unitId = unitIdInput,
+                enabled = !telemetry.isTracking,
+                lastSyncFormatted = telemetry.lastSyncFormatted,
+                lastSyncError = telemetry.lastSyncError,
+                onUnitIdChange = { unitIdInput = it }
+            )
+
             StatusBanner(telemetry = telemetry)
 
             SpeedHeroCard(telemetry = telemetry)
@@ -230,8 +248,67 @@ fun GeoTrackerMainScreen() {
             ActionControls(
                 isTracking = telemetry.isTracking,
                 onStartClick = { requestPermissionsAndStart() },
-                onStopClick = { LocationService.stop(context) }
+                onStopClick = { LocationService.stop(context, effectiveUnitId()) }
             )
+        }
+    }
+}
+
+@Composable
+private fun UnitIdentityAndSyncCard(
+    unitId: String,
+    enabled: Boolean,
+    lastSyncFormatted: String,
+    lastSyncError: String?,
+    onUnitIdChange: (String) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedTextField(
+                value = unitId,
+                onValueChange = onUnitIdChange,
+                enabled = enabled,
+                singleLine = true,
+                label = { Text("Identifiant unité / indicatif") },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Outlined.Badge, contentDescription = null)
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val hasError = lastSyncError != null
+                    Icon(
+                        imageVector = if (hasError) Icons.Outlined.CloudOff else Icons.Outlined.CloudDone,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (hasError) {
+                            "Sync Firestore : $lastSyncError"
+                        } else {
+                            "Dernier envoi Firestore : $lastSyncFormatted"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
