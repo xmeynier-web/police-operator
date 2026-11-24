@@ -8,8 +8,25 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+enum class OperationalStatus(
+    val code: String,
+    val label: String
+) {
+    PATROUILLE("PATROUILLE", "En patrouille"),
+    INTERVENTION("INTERVENTION", "En intervention"),
+    DISPONIBLE("DISPONIBLE", "Disponible"),
+    PAUSE("PAUSE", "En pause");
+
+    companion object {
+        fun fromCode(code: String?): OperationalStatus {
+            return entries.firstOrNull { it.code.equals(code, ignoreCase = true) } ?: PATROUILLE
+        }
+    }
+}
+
 data class LocationTelemetry(
     val unitId: String = "UNITE-01",
+    val operationalStatus: OperationalStatus = OperationalStatus.PATROUILLE,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracyMeters: Float? = null,
@@ -37,6 +54,10 @@ object LocationRepository {
     fun setUnitId(unitId: String) {
         val cleaned = unitId.trim().ifEmpty { "UNITE-01" }
         _telemetry.update { it.copy(unitId = cleaned) }
+    }
+
+    fun updateOperationalStatus(status: OperationalStatus) {
+        _telemetry.update { it.copy(operationalStatus = status) }
     }
 
     fun setBackgroundPermissionState(granted: Boolean) {
