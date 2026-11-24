@@ -9,6 +9,7 @@ import java.util.Date
 import java.util.Locale
 
 data class LocationTelemetry(
+    val unitId: String = "UNITE-01",
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracyMeters: Float? = null,
@@ -16,6 +17,8 @@ data class LocationTelemetry(
     val bearingDegrees: Float? = null,
     val altitudeMeters: Double? = null,
     val lastUpdateFormatted: String = "--:--:--",
+    val lastSyncFormatted: String = "--:--:--",
+    val lastSyncError: String? = null,
     val fixCount: Int = 0,
     val isTracking: Boolean = false,
     val hasBackgroundPermission: Boolean = false,
@@ -31,6 +34,11 @@ object LocationRepository {
 
     private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
 
+    fun setUnitId(unitId: String) {
+        val cleaned = unitId.trim().ifEmpty { "UNITE-01" }
+        _telemetry.update { it.copy(unitId = cleaned) }
+    }
+
     fun setBackgroundPermissionState(granted: Boolean) {
         _telemetry.update { it.copy(hasBackgroundPermission = granted) }
     }
@@ -40,6 +48,7 @@ object LocationRepository {
             it.copy(
                 isTracking = true,
                 hasBackgroundPermission = hasBackgroundPermission,
+                lastSyncError = null,
                 statusMessage = if (hasBackgroundPermission) {
                     "Suivi actif (premier plan & arrière-plan)"
                 } else {
@@ -81,6 +90,22 @@ object LocationRepository {
                 isTracking = true,
                 statusMessage = "Position reçue à $now"
             )
+        }
+    }
+
+    fun recordSyncSuccess() {
+        val now = timeFormatter.format(Date())
+        _telemetry.update {
+            it.copy(
+                lastSyncFormatted = now,
+                lastSyncError = null
+            )
+        }
+    }
+
+    fun recordSyncError(message: String?) {
+        _telemetry.update {
+            it.copy(lastSyncError = message ?: "Erreur de synchronisation")
         }
     }
 }
