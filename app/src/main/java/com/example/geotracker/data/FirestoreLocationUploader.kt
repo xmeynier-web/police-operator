@@ -17,7 +17,9 @@ class FirestoreLocationUploader(
 
     suspend fun uploadSample(
         unitId: String,
+        unitName: String,
         operationalStatus: OperationalStatus,
+        equipment: List<String>,
         missionNote: String,
         sample: GpsSample,
         isTracking: Boolean = true
@@ -31,16 +33,15 @@ class FirestoreLocationUploader(
 
             val payload = hashMapOf<String, Any?>(
                 "unitId" to unitId,
+                "unitName" to unitName,
                 "operationalStatus" to operationalStatus.code,
                 "operationalStatusLabel" to operationalStatus.label,
+                "equipment" to equipment,
                 "missionNote" to missionNote,
                 "latitude" to sample.latitude,
                 "longitude" to sample.longitude,
                 "accuracyMeters" to sample.accuracyMeters,
-                "speedMetersPerSec" to sample.speedMetersPerSec,
                 "speedKmh" to speedKmh,
-                "bearingDegrees" to sample.bearingDegrees,
-                "altitudeMeters" to sample.altitudeMeters,
                 "isTracking" to isTracking,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
@@ -54,22 +55,26 @@ class FirestoreLocationUploader(
 
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Échec de synchronisation Firestore pour $unitId", e)
+            Log.e(TAG, "Échec sync Firestore pour $unitId", e)
             Result.failure(e)
         }
     }
 
-    suspend fun updateOperationalStatusOnly(
+    suspend fun updateUnitStateOnly(
         unitId: String,
+        unitName: String,
         operationalStatus: OperationalStatus,
+        equipment: List<String>,
         missionNote: String,
         isTracking: Boolean
     ): Result<Unit> {
         return try {
             val updates = mapOf(
                 "unitId" to unitId,
+                "unitName" to unitName,
                 "operationalStatus" to operationalStatus.code,
                 "operationalStatusLabel" to operationalStatus.label,
+                "equipment" to equipment,
                 "missionNote" to missionNote,
                 "isTracking" to isTracking,
                 "updatedAt" to FieldValue.serverTimestamp()
@@ -80,23 +85,27 @@ class FirestoreLocationUploader(
                 .await()
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Échec mise à jour statut Firestore pour $unitId", e)
+            Log.e(TAG, "Échec mise à jour état Firestore pour $unitId", e)
             Result.failure(e)
         }
     }
 
     suspend fun markTrackingStopped(
         unitId: String,
+        unitName: String,
         operationalStatus: OperationalStatus,
+        equipment: List<String>,
         missionNote: String
     ): Result<Unit> {
         return try {
             val updates = mapOf(
+                "unitId" to unitId,
+                "unitName" to unitName,
                 "operationalStatus" to operationalStatus.code,
                 "operationalStatusLabel" to operationalStatus.label,
+                "equipment" to equipment,
                 "missionNote" to missionNote,
                 "isTracking" to false,
-                "speedMetersPerSec" to 0f,
                 "speedKmh" to 0f,
                 "updatedAt" to FieldValue.serverTimestamp()
             )
