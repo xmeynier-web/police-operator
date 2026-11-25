@@ -8,19 +8,19 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.example.geotracker.R
-import com.example.geotracker.xavier.policeoperator.data.FirestoreLocationUploader
-import com.example.geotracker.xavier.policeoperator.location.ActiveLocationTracker
-import com.example.geotracker.xavier.policeoperator.model.GpsSample
-import com.example.geotracker.xavier.policeoperator.model.PatrolStatus
+import com.xavier.policeoperator.R
+import com.xavier.policeoperator.data.FirestoreLocationUploader
+import com.xavier.policeoperator.location.ActiveLocationTracker
+import com.xavier.policeoperator.model.GpsSample
+import com.xavier.policeoperator.model.PatrolStatus
 
 class LocationService : Service() {
 
     companion object {
         const val CHANNEL_ID = "police_op_foreground_channel"
         const val NOTIFICATION_ID = 101
-        const val ACTION_START = "com.example.geotracker.xavier.policeoperator.action.START"
-        const val ACTION_STOP = "com.example.geotracker.xavier.policeoperator.action.STOP"
+        const val ACTION_START = "com.xavier.policeoperator.action.START"
+        const val ACTION_STOP = "com.xavier.policeoperator.action.STOP"
         const val EXTRA_UNIT_ID = "extra_unit_id"
         const val EXTRA_STATUS_CODE = "extra_status_code"
     }
