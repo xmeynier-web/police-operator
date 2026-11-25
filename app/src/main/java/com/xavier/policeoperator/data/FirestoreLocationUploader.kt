@@ -71,6 +71,9 @@ class FirestoreLocationUploader(
                     return@addSnapshotListener
                 }
                 val items = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    if (doc.getBoolean("archived") == true) {
+                        return@mapNotNull null
+                    }
                     val assignedUnit = (doc.getString("unitId") ?: "").trim()
                     if (assignedUnit.isNotEmpty() && assignedUnit.lowercase() != targetUnit) {
                         return@mapNotNull null
