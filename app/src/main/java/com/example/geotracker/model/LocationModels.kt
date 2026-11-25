@@ -24,27 +24,33 @@ enum class OperationalStatus(
     }
 }
 
+object OnboardEquipmentCatalog {
+    val defaultItems: List<String> = listOf(
+        "Terminal / Radio",
+        "Caméra piéton",
+        "Éclairage / Signalétique",
+        "Trousse premiers secours",
+        "Équipement protection"
+    )
+}
+
 data class LocationTelemetry(
     val unitId: String = "UNITE-01",
+    val unitName: String = "Unité 01",
     val operationalStatus: OperationalStatus = OperationalStatus.PATROUILLE,
+    val selectedEquipment: Set<String> = setOf("Terminal / Radio", "Caméra piéton"),
     val missionNote: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracyMeters: Float? = null,
-    val speedMetersPerSec: Float = 0f,
-    val bearingDegrees: Float? = null,
-    val altitudeMeters: Double? = null,
+    val speedKmh: Float = 0f,
     val lastUpdateFormatted: String = "--:--:--",
     val lastSyncFormatted: String = "--:--:--",
     val lastSyncError: String? = null,
-    val fixCount: Int = 0,
     val isTracking: Boolean = false,
     val hasBackgroundPermission: Boolean = false,
     val statusMessage: String = "En attente de démarrage"
-) {
-    val speedKmh: Float
-        get() = if (speedMetersPerSec > 0.15f) speedMetersPerSec * 3.6f else 0f
-}
+)
 
 object LocationRepository {
     private val _telemetry = MutableStateFlow(LocationTelemetry())
@@ -52,13 +58,32 @@ object LocationRepository {
 
     private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
 
-    fun setUnitId(unitId: String) {
-        val cleaned = unitId.trim().ifEmpty { "UNITE-01" }
-        _telemetry.update { it.copy(unitId = cleaned) }
+    fun setUnitIdentity(unitId: String, unitName: String) {
+        val cleanedId = unitId.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
+        val cleanedName = unitName.trim().ifEmpty { cleanedId }
+        _telemetry.update {
+            it.copy(
+                unitId = cleanedId,
+                unitName = cleanedName
+            )
+        }
     }
 
     fun updateOperationalStatus(status: OperationalStatus) {
         _telemetry.update { it.copy(operationalStatus = status) }
+    }
+
+    fun toggleEquipment(item: String) {
+        _telemetry.update { current ->
+            val updated = current.selectedEquipment.toMutableSet().apply {
+                if (!add(item)) remove(item)
+            }
+            current.copy(selectedEquipment = updated)
+        }
+    }
+
+    fun setEquipmentList(items: Set<String>) {
+        _telemetry.update { it.copy(selectedEquipment = items) }
     }
 
     fun updateMissionNote(note: String) {
@@ -76,9 +101,9 @@ object LocationRepository {
                 hasBackgroundPermission = hasBackgroundPermission,
                 lastSyncError = null,
                 statusMessage = if (hasBackgroundPermission) {
-                    "Suivi actif (premier plan & arrière-plan)"
+                    "Actif · Arrière-plan OK"
                 } else {
-                    "Suivi actif (premier plan uniquement)"
+                    "Actif · Premier plan"
                 }
             )
         }
@@ -88,7 +113,7 @@ object LocationRepository {
         _telemetry.update {
             it.copy(
                 isTracking = false,
-                speedMetersPerSec = 0f,
+                speedKmh = 0f,
                 statusMessage = "Suivi arrêté"
             )
         }
@@ -98,23 +123,19 @@ object LocationRepository {
         latitude: Double,
         longitude: Double,
         accuracyMeters: Float,
-        speedMetersPerSec: Float,
-        bearingDegrees: Float?,
-        altitudeMeters: Double?
+        speedMetersPerSec: Float
     ) {
         val now = timeFormatter.format(Date())
+        val computedSpeedKmh = if (speedMetersPerSec > 0.15f) speedMetersPerSec * 3.6f else 0f
         _telemetry.update { current ->
             current.copy(
                 latitude = latitude,
                 longitude = longitude,
                 accuracyMeters = accuracyMeters,
-                speedMetersPerSec = speedMetersPerSec,
-                bearingDegrees = bearingDegrees,
-                altitudeMeters = altitudeMeters,
+                speedKmh = computedSpeedKmh,
                 lastUpdateFormatted = now,
-                fixCount = current.fixCount + 1,
                 isTracking = true,
-                statusMessage = "Position reçue à $now"
+                statusMessage = "MAJ GPS à $now"
             )
         }
     }
@@ -131,7 +152,7 @@ object LocationRepository {
 
     fun recordSyncError(message: String?) {
         _telemetry.update {
-            it.copy(lastSyncError = message ?: "Erreur de synchronisation")
+            it.copy(lastSyncError = message ?: "Erreur réseau")
         }
     }
 }
