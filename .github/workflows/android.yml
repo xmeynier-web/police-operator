@@ -34,14 +34,13 @@ jobs:
             chmod +x gradlew
           fi
 
-      - name: Restore google-services.json from secret if present
-        if: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
+      - name: Prepare google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          printf '%s' "${{ secrets.GOOGLE_SERVICES_JSON }}" > app/google-services.json
-
-      - name: Create fallback google-services.json if absent
-        run: |
-          if [ ! -f app/google-services.json ]; then
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          elif [ ! -f app/google-services.json ]; then
             cat << 'EOF' > app/google-services.json
           {
             "project_info": {
