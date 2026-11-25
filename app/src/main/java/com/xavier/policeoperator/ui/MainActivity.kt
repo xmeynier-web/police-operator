@@ -11,11 +11,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,8 +38,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -217,7 +215,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PoliceOpScreen(
     uploader: FirestoreLocationUploader,
@@ -243,6 +240,12 @@ private fun PoliceOpScreen(
 
     val selectableStatuses = remember {
         PatrolStatus.entries.filter { it != PatrolStatus.FIN_DE_SERVICE }
+    }
+    val statusRows = remember(selectableStatuses) {
+        selectableStatuses.chunked(2)
+    }
+    val equipmentRows = remember {
+        DEFAULT_EQUIPMENT_LIST.chunked(2)
     }
 
     DisposableEffect(Unit) {
@@ -456,49 +459,63 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 4. Boutons de statuts élargis
-                FlowRow(
+                // 4. Boutons de statuts en 2 colonnes homogènes de même largeur
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    selectableStatuses.forEach { status ->
-                        val selected = currentStatus == status
-                        val badgeColor = Color(status.colorHex)
-                        FilterChip(
-                            selected = selected,
-                            onClick = {
-                                currentStatus = status
-                                onStateChanged(
-                                    unitId,
-                                    crewCount,
-                                    status,
-                                    isTracking,
-                                    selectedEquipment.toList(),
-                                    lastSample
-                                )
-                            },
-                            modifier = Modifier.height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            label = {
-                                Text(
-                                    text = status.label,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color(0xFF162032),
-                                labelColor = Color(0xFFE2E8F0),
-                                selectedContainerColor = badgeColor,
-                                selectedLabelColor = if (status == PatrolStatus.CONTROLE_ROUTE) {
-                                    Color(0xFF082F49)
+                    statusRows.forEach { pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { status ->
+                                val selected = currentStatus == status
+                                val badgeColor = Color(status.colorHex)
+                                val textColor = if (selected) {
+                                    if (status == PatrolStatus.CONTROLE_ROUTE) Color(0xFF082F49) else Color.White
                                 } else {
-                                    Color.White
+                                    Color(0xFFE2E8F0)
                                 }
-                            )
-                        )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (selected) badgeColor else Color(0xFF162032))
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (selected) badgeColor else Color(0xFF334155),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            currentStatus = status
+                                            onStateChanged(
+                                                unitId,
+                                                crewCount,
+                                                status,
+                                                isTracking,
+                                                selectedEquipment.toList(),
+                                                lastSample
+                                            )
+                                        }
+                                        .padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = status.label,
+                                        color = textColor,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (pair.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
 
@@ -542,7 +559,7 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 6. Matériel embarqué par l'équipage
+                // 6. Matériel embarqué en 2 colonnes homogènes de même largeur
                 Text(
                     text = "Matériel embarqué",
                     color = Color(0xFF38BDF8),
@@ -550,57 +567,72 @@ private fun PoliceOpScreen(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
-                FlowRow(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    DEFAULT_EQUIPMENT_LIST.forEach { item ->
-                        val isSelected = selectedEquipment.contains(item)
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                if (isSelected) {
-                                    selectedEquipment.remove(item)
-                                } else {
-                                    selectedEquipment.add(item)
-                                }
-                                onStateChanged(
-                                    unitId,
-                                    crewCount,
-                                    currentStatus,
-                                    isTracking,
-                                    selectedEquipment.toList(),
-                                    lastSample
-                                )
-                            },
-                            modifier = Modifier.height(38.dp),
-                            shape = RoundedCornerShape(9.dp),
-                            leadingIcon = if (isSelected) {
-                                {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
+                    equipmentRows.forEach { pair ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { item ->
+                                val isSelected = selectedEquipment.contains(item)
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(40.dp)
+                                        .clip(RoundedCornerShape(9.dp))
+                                        .background(
+                                            if (isSelected) Color(0xFF1D4ED8) else Color(0xFF162032)
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF334155),
+                                            shape = RoundedCornerShape(9.dp)
+                                        )
+                                        .clickable {
+                                            if (isSelected) {
+                                                selectedEquipment.remove(item)
+                                            } else {
+                                                selectedEquipment.add(item)
+                                            }
+                                            onStateChanged(
+                                                unitId,
+                                                crewCount,
+                                                currentStatus,
+                                                isTracking,
+                                                selectedEquipment.toList(),
+                                                lastSample
+                                            )
+                                        }
+                                        .padding(horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                    }
+                                    Text(
+                                        text = item,
+                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                            } else null,
-                            label = {
-                                Text(
-                                    text = item,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color(0xFF162032),
-                                labelColor = Color(0xFFCBD5E1),
-                                selectedContainerColor = Color(0xFF1D4ED8),
-                                selectedLabelColor = Color.White,
-                                selectedLeadingIconColor = Color.White
-                            )
-                        )
+                            }
+                            if (pair.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
 
