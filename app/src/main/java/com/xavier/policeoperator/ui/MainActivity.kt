@@ -16,12 +16,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,14 +37,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Badge
-import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CheckBox
+import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.CloudDone
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Flag
 import androidx.compose.material.icons.outlined.GpsFixed
-import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -53,9 +52,10 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,7 +65,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -109,17 +108,13 @@ fun OperatorConsoleScreen() {
     val telemetry by LocationRepository.telemetry.collectAsState()
 
     var unitIdInput by remember { mutableStateOf(telemetry.unitId) }
-    var unitNameInput by remember { mutableStateOf(telemetry.unitName) }
-    var missionNoteInput by remember { mutableStateOf(telemetry.missionNote) }
     var customEquipmentInput by remember { mutableStateOf("") }
 
-    fun syncFormState(): Triple<String, String, String> {
-        val cleanedId = unitIdInput.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
-        val cleanedName = unitNameInput.trim().ifEmpty { cleanedId }
-        val cleanedNote = missionNoteInput.trim()
-        LocationRepository.setUnitIdentity(cleanedId, cleanedName)
-        LocationRepository.updateMissionNote(cleanedNote)
-        return Triple(cleanedId, cleanedName, cleanedNote)
+    fun applyUnitId(): String {
+        val cleaned = unitIdInput.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
+        unitIdInput = cleaned
+        LocationRepository.setUnitId(cleaned)
+        return cleaned
     }
 
     LaunchedEffect(Unit) {
@@ -138,14 +133,12 @@ fun OperatorConsoleScreen() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         LocationRepository.setBackgroundPermissionState(isGranted)
-        val (id, name, note) = syncFormState()
+        val id = applyUnitId()
         LocationService.start(
             context = context,
             unitId = id,
-            unitName = name,
             status = telemetry.operationalStatus,
-            equipment = telemetry.selectedEquipment.toList().sorted(),
-            missionNote = note
+            equipment = telemetry.selectedEquipment.toList().sorted()
         )
     }
 
@@ -168,14 +161,12 @@ fun OperatorConsoleScreen() {
                     return@rememberLauncherForActivityResult
                 }
             }
-            val (id, name, note) = syncFormState()
+            val id = applyUnitId()
             LocationService.start(
                 context = context,
                 unitId = id,
-                unitName = name,
                 status = telemetry.operationalStatus,
-                equipment = telemetry.selectedEquipment.toList().sorted(),
-                missionNote = note
+                equipment = telemetry.selectedEquipment.toList().sorted()
             )
         } else {
             Toast.makeText(context, "Permission GPS refusée", Toast.LENGTH_SHORT).show()
@@ -199,12 +190,12 @@ fun OperatorConsoleScreen() {
                 title = {
                     Column {
                         Text(
-                            text = "${telemetry.unitName} · ${telemetry.unitId}",
+                            text = "Police Operator",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = telemetry.statusMessage,
+                            text = "${telemetry.unitId} · ${telemetry.statusMessage}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -217,10 +208,7 @@ fun OperatorConsoleScreen() {
                             contentDescription = "Paramètres"
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                }
             )
         }
     ) { innerPadding ->
@@ -234,28 +222,18 @@ fun OperatorConsoleScreen() {
         ) {
             LiveStatusAndSyncBar(telemetry = telemetry)
 
-            UnitNamingCard(
+            UnitIdCard(
                 unitId = unitIdInput,
-                unitName = unitNameInput,
-                missionNote = missionNoteInput,
-                lockUnitId = telemetry.isTracking,
                 onUnitIdChange = { unitIdInput = it },
-                onUnitNameChange = {
-                    unitNameInput = it
-                    LocationRepository.setUnitIdentity(unitIdInput, it)
-                },
-                onMissionNoteChange = {
-                    missionNoteInput = it
-                    LocationRepository.updateMissionNote(it)
-                }
+                onApplyUnitId = { applyUnitId() }
             )
 
-            OperationalStatusSection(
+            OperationalStatusGrid(
                 selectedStatus = telemetry.operationalStatus,
                 onSelectStatus = { LocationRepository.updateOperationalStatus(it) }
             )
 
-            OnboardEquipmentSection(
+            EquipmentChecklistCard(
                 selectedEquipment = telemetry.selectedEquipment,
                 customEquipmentInput = customEquipmentInput,
                 onCustomEquipmentInputChange = { customEquipmentInput = it },
@@ -270,7 +248,7 @@ fun OperatorConsoleScreen() {
                 }
             )
 
-            CompactGeolocationCard(
+            GeolocationSummaryCard(
                 telemetry = telemetry,
                 onCopyCoords = {
                     val lat = telemetry.latitude
@@ -278,7 +256,7 @@ fun OperatorConsoleScreen() {
                     if (lat != null && lon != null) {
                         val txt = String.format(Locale.US, "%.6f, %.6f", lat, lon)
                         copyToClipboard(context, "Position", txt)
-                        Toast.makeText(context, "Position copiée : $txt", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Position copiée", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -287,14 +265,12 @@ fun OperatorConsoleScreen() {
                 isTracking = telemetry.isTracking,
                 onStart = { requestPermissionsAndStart() },
                 onStop = {
-                    val (id, name, note) = syncFormState()
+                    val id = applyUnitId()
                     LocationService.stop(
                         context = context,
                         unitId = id,
-                        unitName = name,
                         status = telemetry.operationalStatus,
-                        equipment = telemetry.selectedEquipment.toList().sorted(),
-                        missionNote = note
+                        equipment = telemetry.selectedEquipment.toList().sorted()
                     )
                 }
             )
@@ -304,9 +280,9 @@ fun OperatorConsoleScreen() {
 
 @Composable
 private fun LiveStatusAndSyncBar(telemetry: LocationTelemetry) {
-    val bg = if (telemetry.isTracking) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (telemetry.isTracking) Color(0xFF14532D) else MaterialTheme.colorScheme.onSurfaceVariant
-    val dot = if (telemetry.isTracking) Color(0xFF16A34A) else Color(0xFF6B7280)
+    val bg = if (telemetry.isTracking) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.surfaceContainerHigh
+    val fg = if (telemetry.isTracking) Color(0xFF14532D) else MaterialTheme.colorScheme.onSurface
+    val dot = if (telemetry.isTracking) Color(0xFF16A34A) else Color(0xFF64748B)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -357,14 +333,10 @@ private fun LiveStatusAndSyncBar(telemetry: LocationTelemetry) {
 }
 
 @Composable
-private fun UnitNamingCard(
+private fun UnitIdCard(
     unitId: String,
-    unitName: String,
-    missionNote: String,
-    lockUnitId: Boolean,
     onUnitIdChange: (String) -> Unit,
-    onUnitNameChange: (String) -> Unit,
-    onMissionNoteChange: (String) -> Unit
+    onApplyUnitId: () -> Unit
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -378,13 +350,13 @@ private fun UnitNamingCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Outlined.Groups,
+                    imageVector = Icons.Outlined.Badge,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "IDENTIFICATION DE L'UNITÉ",
+                    text = "INDICATIF DE L'UNITÉ",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -392,49 +364,35 @@ private fun UnitNamingCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = unitId,
                     onValueChange = onUnitIdChange,
-                    enabled = !lockUnitId,
                     singleLine = true,
-                    label = { Text("Indicatif") },
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Outlined.Badge, contentDescription = null)
-                    },
-                    modifier = Modifier.weight(0.45f)
+                    label = { Text("Indicatif (ex. UNITE-01)") },
+                    modifier = Modifier.weight(1f)
                 )
-
-                OutlinedTextField(
-                    value = unitName,
-                    onValueChange = onUnitNameChange,
-                    singleLine = true,
-                    label = { Text("Nom d'unité") },
-                    modifier = Modifier.weight(0.55f)
-                )
+                OutlinedButton(
+                    onClick = onApplyUnitId,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(54.dp)
+                ) {
+                    Text("Valider")
+                }
             }
-
-            OutlinedTextField(
-                value = missionNote,
-                onValueChange = onMissionNoteChange,
-                singleLine = true,
-                label = { Text("Secteur / consigne courte") },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Outlined.Description, contentDescription = null)
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OperationalStatusSection(
+private fun OperationalStatusGrid(
     selectedStatus: OperationalStatus,
     onSelectStatus: (OperationalStatus) -> Unit
 ) {
+    val rows = OperationalStatus.entries.chunked(2)
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp)
@@ -443,7 +401,7 @@ private fun OperationalStatusSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -451,7 +409,7 @@ private fun OperationalStatusSection(
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "STATUT OPÉRATIONNEL",
                     style = MaterialTheme.typography.labelLarge,
@@ -459,38 +417,56 @@ private fun OperationalStatusSection(
                 )
             }
 
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                OperationalStatus.entries.forEach { status ->
-                    val selected = status == selectedStatus
-                    FilterChip(
-                        selected = selected,
-                        onClick = { onSelectStatus(status) },
-                        label = { Text(status.label) },
-                        leadingIcon = if (selected) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+            rows.forEach { pair ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    pair.forEach { status ->
+                        val isSelected = status == selectedStatus
+                        val accentColor = when (status) {
+                            OperationalStatus.PATROUILLE -> Color(0xFF2563EB)
+                            OperationalStatus.INTERVENTION -> Color(0xFFDC2626)
+                            OperationalStatus.DISPONIBLE -> Color(0xFF16A34A)
+                            OperationalStatus.PAUSE -> Color(0xFFD97706)
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp)
+                                .clickable { onSelectStatus(status) },
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) accentColor else MaterialTheme.colorScheme.surfaceContainerLow
+                            ),
+                            border = BorderStroke(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) accentColor else MaterialTheme.colorScheme.outlineVariant
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = status.label,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
                                 )
                             }
-                        } else {
-                            null
                         }
-                    )
+                    }
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun OnboardEquipmentSection(
+private fun EquipmentChecklistCard(
     selectedEquipment: Set<String>,
     customEquipmentInput: String,
     onCustomEquipmentInputChange: (String) -> Unit,
@@ -522,7 +498,7 @@ private fun OnboardEquipmentSection(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "MATÉRIEL EMBARQUÉ",
                         style = MaterialTheme.typography.labelLarge,
@@ -530,40 +506,54 @@ private fun OnboardEquipmentSection(
                     )
                 }
                 Text(
-                    text = "${selectedEquipment.size} actif(s)",
+                    text = "${selectedEquipment.size} coché(s)",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                allChoices.forEach { item ->
-                    val active = item in selectedEquipment
-                    FilterChip(
-                        selected = active,
-                        onClick = { onToggleItem(item) },
-                        label = { Text(item) },
-                        leadingIcon = if (active) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        } else {
-                            null
-                        }
+            allChoices.forEach { item ->
+                val checked = item in selectedEquipment
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggleItem(item) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (checked) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
                     )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = item,
+                            fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Icon(
+                            imageVector = if (checked) Icons.Outlined.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
+                            contentDescription = null,
+                            tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -571,13 +561,13 @@ private fun OnboardEquipmentSection(
                     value = customEquipmentInput,
                     onValueChange = onCustomEquipmentInputChange,
                     singleLine = true,
-                    label = { Text("Ajouter un matériel") },
+                    label = { Text("Autre équipement") },
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onAddCustomItem) {
                     Icon(
                         imageVector = Icons.Outlined.Add,
-                        contentDescription = "Ajouter le matériel"
+                        contentDescription = "Ajouter équipement"
                     )
                 }
             }
@@ -586,7 +576,7 @@ private fun OnboardEquipmentSection(
 }
 
 @Composable
-private fun CompactGeolocationCard(
+private fun GeolocationSummaryCard(
     telemetry: LocationTelemetry,
     onCopyCoords: () -> Unit
 ) {
@@ -594,7 +584,7 @@ private fun CompactGeolocationCard(
     val coordsText = if (hasCoords) {
         String.format(Locale.US, "%.5f, %.5f", telemetry.latitude, telemetry.longitude)
     } else {
-        "En attente du signal..."
+        "En attente du signal GPS..."
     }
     val accuracyText = telemetry.accuracyMeters?.let {
         String.format(Locale.FRANCE, "± %.0f m", it)
@@ -621,7 +611,7 @@ private fun CompactGeolocationCard(
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "GÉOLOCALISATION",
                         style = MaterialTheme.typography.labelLarge,
@@ -631,7 +621,7 @@ private fun CompactGeolocationCard(
                 IconButton(onClick = onCopyCoords, enabled = hasCoords) {
                     Icon(
                         imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "Copier la position"
+                        contentDescription = "Copier coordonnées"
                     )
                 }
             }
