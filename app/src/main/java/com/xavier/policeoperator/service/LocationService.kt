@@ -37,19 +37,15 @@ class LocationService : Service() {
     private var stateObserverJob: Job? = null
 
     private var currentUnitId: String = "UNITE-01"
-    private var currentUnitName: String = "Unité 01"
     private var currentStatus: OperationalStatus = OperationalStatus.PATROUILLE
     private var currentEquipment: List<String> = emptyList()
-    private var currentNote: String = ""
     private var isServiceTracking: Boolean = false
     private var hasInitializedObserver: Boolean = false
 
     private data class UnitStateSnapshot(
         val unitId: String,
-        val unitName: String,
         val status: OperationalStatus,
-        val equipment: List<String>,
-        val note: String
+        val equipment: List<String>
     )
 
     override fun onCreate() {
@@ -69,33 +65,30 @@ class LocationService : Service() {
                 .map { state ->
                     UnitStateSnapshot(
                         unitId = state.unitId,
-                        unitName = state.unitName,
                         status = state.operationalStatus,
-                        equipment = state.selectedEquipment.toList().sorted(),
-                        note = state.missionNote
+                        equipment = state.selectedEquipment.toList().sorted()
                     )
                 }
                 .distinctUntilChanged()
                 .collect { snapshot ->
                     currentUnitId = snapshot.unitId
-                    currentUnitName = snapshot.unitName
                     currentStatus = snapshot.status
                     currentEquipment = snapshot.equipment
-                    currentNote = snapshot.note
 
                     if (!hasInitializedObserver) {
                         hasInitializedObserver = true
                         return@collect
                     }
                     if (isServiceTracking) {
-                        updateNotification(currentUnitId, currentUnitName, currentStatus)
-                        val result = uploader.updateUnitStateOnly(
+                        updateNotification(currentUnitId, currentStatus)
+                        val latest = LocationRepository.telemetry.value
+                        val result = uploader.pushUnitState(
                             unitId = currentUnitId,
-                            unitName = currentUnitName,
                             operationalStatus = currentStatus,
                             equipment = currentEquipment,
-                            missionNote = currentNote,
-                            isTracking = true
+                            isTracking = true,
+                            latitude = latest.latitude,
+                            longitude = latest.longitude
                         )
                         result.fold(
                             onSuccess = { LocationRepository.recordSyncSuccess() },
@@ -107,14 +100,9 @@ class LocationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val requestedId = intent?.getStringExtra(EXTRA_UNIT_ID)
-        val requestedName = intent?.getStringExtra(EXTRA_UNIT_NAME)
-        if (!requestedId.isNullOrBlank() || !requestedName.isNullOrBlank()) {
-            val resolvedId = requestedId?.takeIf { it.isNotBlank() } ?: currentUnitId
-            val resolvedName = requestedName?.takeIf { it.isNotBlank() } ?: resolvedId
-            currentUnitId = resolvedId
-            currentUnitName = resolvedName
-            LocationRepository.setUnitIdentity(resolvedId, resolvedName)
+        intent?.getStringExtra(EXTRA_UNIT_ID)?.takeIf { it.isNotBlank() }?.let { rawId ->
+            currentUnitId = rawId.trim().uppercase()
+            LocationRepository.setUnitId(currentUnitId)
         }
 
         intent?.getStringExtra(EXTRA_OPERATIONAL_STATUS)?.let { rawStatus ->
@@ -126,11 +114,6 @@ class LocationService : Service() {
         intent?.getStringArrayListExtra(EXTRA_EQUIPMENT)?.let { list ->
             currentEquipment = list.toList().sorted()
             LocationRepository.setEquipmentList(list.toSet())
-        }
-
-        intent?.getStringExtra(EXTRA_MISSION_NOTE)?.let { rawNote ->
-            currentNote = rawNote.trim()
-            LocationRepository.updateMissionNote(currentNote)
         }
 
         if (intent?.action == ACTION_STOP) {
@@ -147,7 +130,7 @@ class LocationService : Service() {
             true
         }
 
-        val notification = buildNotification(currentUnitId, currentUnitName, currentStatus)
+        val notification = buildNotification(currentUnitId, currentStatus)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
@@ -163,6 +146,22 @@ class LocationService : Service() {
         LocationRepository.setTrackingStarted(hasBackground)
         locationTracker.start()
 
+        serviceScope.launch {
+            val latest = LocationRepository.telemetry.value
+            val result = uploader.pushUnitState(
+                unitId = currentUnitId,
+                operationalStatus = currentStatus,
+                equipment = currentEquipment,
+                isTracking = true,
+                latitude = latest.latitude,
+                longitude = latest.longitude
+            )
+            result.fold(
+                onSuccess = { LocationRepository.recordSyncSuccess() },
+                onFailure = { err -> LocationRepository.recordSyncError(err.localizedMessage) }
+            )
+        }
+
         return START_STICKY
     }
 
@@ -175,18 +174,14 @@ class LocationService : Service() {
         )
 
         val unitIdSnapshot = currentUnitId
-        val unitNameSnapshot = currentUnitName
         val statusSnapshot = currentStatus
         val equipmentSnapshot = currentEquipment
-        val noteSnapshot = currentNote
 
         serviceScope.launch {
             val result = uploader.uploadSample(
                 unitId = unitIdSnapshot,
-                unitName = unitNameSnapshot,
                 operationalStatus = statusSnapshot,
                 equipment = equipmentSnapshot,
-                missionNote = noteSnapshot,
                 sample = sample,
                 isTracking = true
             )
@@ -201,19 +196,16 @@ class LocationService : Service() {
         isServiceTracking = false
         locationTracker.stop()
         val unitIdSnapshot = currentUnitId
-        val unitNameSnapshot = currentUnitName
         val statusSnapshot = currentStatus
         val equipmentSnapshot = currentEquipment
-        val noteSnapshot = currentNote
         LocationRepository.setTrackingStopped()
 
         serviceScope.launch {
-            uploader.markTrackingStopped(
+            uploader.pushUnitState(
                 unitId = unitIdSnapshot,
-                unitName = unitNameSnapshot,
                 operationalStatus = statusSnapshot,
                 equipment = equipmentSnapshot,
-                missionNote = noteSnapshot
+                isTracking = false
             )
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -235,7 +227,7 @@ class LocationService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Géolocalisation active",
+                "Police Operator — GPS",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Notification persistante pendant le suivi GPS actif"
@@ -245,20 +237,12 @@ class LocationService : Service() {
         }
     }
 
-    private fun updateNotification(
-        unitId: String,
-        unitName: String,
-        status: OperationalStatus
-    ) {
+    private fun updateNotification(unitId: String, status: OperationalStatus) {
         val manager = getSystemService(NotificationManager::class.java)
-        manager?.notify(NOTIFICATION_ID, buildNotification(unitId, unitName, status))
+        manager?.notify(NOTIFICATION_ID, buildNotification(unitId, status))
     }
 
-    private fun buildNotification(
-        unitId: String,
-        unitName: String,
-        status: OperationalStatus
-    ): Notification {
+    private fun buildNotification(unitId: String, status: OperationalStatus): Notification {
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -272,7 +256,6 @@ class LocationService : Service() {
         val stopIntent = Intent(this, LocationService::class.java).apply {
             action = ACTION_STOP
             putExtra(EXTRA_UNIT_ID, unitId)
-            putExtra(EXTRA_UNIT_NAME, unitName)
             putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
         }
         val stopPendingIntent = PendingIntent.getService(
@@ -283,7 +266,7 @@ class LocationService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("$unitName ($unitId)")
+            .setContentTitle("Police Operator · $unitId")
             .setContentText("Statut : ${status.label}")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(openPendingIntent)
@@ -293,29 +276,23 @@ class LocationService : Service() {
     }
 
     companion object {
-        const val CHANNEL_ID = "geotracker_active_channel"
+        const val CHANNEL_ID = "police_operator_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.xavier.policeoperator.action.STOP"
         const val EXTRA_UNIT_ID = "com.xavier.policeoperator.extra.UNIT_ID"
-        const val EXTRA_UNIT_NAME = "com.xavier.policeoperator.extra.UNIT_NAME"
         const val EXTRA_OPERATIONAL_STATUS = "com.xavier.policeoperator.extra.OPERATIONAL_STATUS"
         const val EXTRA_EQUIPMENT = "com.xavier.policeoperator.extra.EQUIPMENT"
-        const val EXTRA_MISSION_NOTE = "com.xavier.policeoperator.extra.MISSION_NOTE"
 
         fun start(
             context: Context,
             unitId: String,
-            unitName: String,
             status: OperationalStatus,
-            equipment: List<String>,
-            missionNote: String
+            equipment: List<String>
         ) {
             val intent = Intent(context, LocationService::class.java).apply {
                 putExtra(EXTRA_UNIT_ID, unitId)
-                putExtra(EXTRA_UNIT_NAME, unitName)
                 putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
                 putStringArrayListExtra(EXTRA_EQUIPMENT, ArrayList(equipment))
-                putExtra(EXTRA_MISSION_NOTE, missionNote)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -327,18 +304,14 @@ class LocationService : Service() {
         fun stop(
             context: Context,
             unitId: String,
-            unitName: String,
             status: OperationalStatus,
-            equipment: List<String>,
-            missionNote: String
+            equipment: List<String>
         ) {
             val intent = Intent(context, LocationService::class.java).apply {
                 action = ACTION_STOP
                 putExtra(EXTRA_UNIT_ID, unitId)
-                putExtra(EXTRA_UNIT_NAME, unitName)
                 putExtra(EXTRA_OPERATIONAL_STATUS, status.code)
                 putStringArrayListExtra(EXTRA_EQUIPMENT, ArrayList(equipment))
-                putExtra(EXTRA_MISSION_NOTE, missionNote)
             }
             context.startService(intent)
         }
