@@ -219,7 +219,6 @@ private fun PoliceOpScreen(
         color = Color(0xFF0F172A)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Identité Police OP + logo dédié + bouton Actif/Stop
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -275,7 +274,6 @@ private fun PoliceOpScreen(
                 }
             }
 
-            // Fenêtre des données GPS réduite au minimum sur une seule ligne + indicatif unité
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -319,7 +317,6 @@ private fun PoliceOpScreen(
                 )
             }
 
-            // Statuts avec couleurs propres (dont Sur les lieux et Contrôle route)
             FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
