@@ -8,11 +8,11 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.example.geotracker.R
 import com.example.geotracker.data.FirestoreLocationUploader
 import com.example.geotracker.location.ActiveLocationTracker
 import com.example.geotracker.model.GpsSample
 import com.example.geotracker.model.PatrolStatus
+import com.xavier.policeoperator.R
 
 class LocationService : Service() {
 
