@@ -6,6 +6,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.xavier.policeoperator.model.CsuDispatchMessage
+import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 
@@ -14,17 +15,20 @@ class FirestoreLocationUploader(
 ) {
     fun upsertUnitState(
         unitId: String,
+        crewCount: Int,
         status: PatrolStatus,
         isTracking: Boolean,
         sample: GpsSample?,
-        equipment: List<String> = listOf("Caméra piéton", "Terminal / Radio"),
+        equipment: List<String> = DEFAULT_EQUIPMENT_LIST,
         recordHistory: Boolean = false
     ) {
         val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+        val cleanCrewCount = crewCount.coerceAtLeast(1)
         val docRef = firestore.collection("live_positions").document(cleanUnitId)
 
         val payload = hashMapOf<String, Any>(
             "unitId" to cleanUnitId,
+            "crewCount" to cleanCrewCount,
             "operationalStatus" to status.code,
             "operationalStatusLabel" to status.label,
             "isTracking" to isTracking,
@@ -45,6 +49,7 @@ class FirestoreLocationUploader(
                     "latitude" to sample.latitude,
                     "longitude" to sample.longitude,
                     "speedKmh" to sample.speedKmh,
+                    "crewCount" to cleanCrewCount,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             )
