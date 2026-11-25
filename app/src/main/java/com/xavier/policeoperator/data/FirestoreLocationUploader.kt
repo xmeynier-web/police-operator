@@ -1,100 +1,105 @@
-package com.xavier.policeoperator.data
+package com.example.geotracker.xavier.policeoperator.data
 
-import android.util.Log
+import com.example.geotracker.xavier.policeoperator.model.CsuDispatchMessage
+import com.example.geotracker.xavier.policeoperator.model.GpsSample
+import com.example.geotracker.xavier.policeoperator.model.PatrolStatus
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
-import com.xavier.policeoperator.location.GpsSample
-import com.xavier.policeoperator.model.OperationalStatus
-import kotlinx.coroutines.tasks.await
 
 class FirestoreLocationUploader(
-    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance(),
-    private val liveCollection: String = "live_positions",
-    private val historySubcollection: String = "history",
-    private val recordHistory: Boolean = true
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-
-    suspend fun uploadSample(
+    fun upsertUnitState(
         unitId: String,
-        operationalStatus: OperationalStatus,
-        equipment: List<String>,
-        sample: GpsSample,
-        isTracking: Boolean = true
-    ): Result<Unit> {
-        return try {
-            val speedKmh = if (sample.speedMetersPerSec > 0.15f) {
-                sample.speedMetersPerSec * 3.6f
-            } else {
-                0f
-            }
-
-            val payload = hashMapOf<String, Any?>(
-                "unitId" to unitId,
-                "unitName" to unitId,
-                "operationalStatus" to operationalStatus.code,
-                "operationalStatusLabel" to operationalStatus.label,
-                "equipment" to equipment,
-                "latitude" to sample.latitude,
-                "longitude" to sample.longitude,
-                "accuracyMeters" to sample.accuracyMeters,
-                "speedKmh" to speedKmh,
-                "isTracking" to isTracking,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-
-            val liveDocRef = firestore.collection(liveCollection).document(unitId)
-            liveDocRef.set(payload, SetOptions.merge()).await()
-
-            if (recordHistory) {
-                liveDocRef.collection(historySubcollection).add(payload).await()
-            }
-
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Échec sync Firestore pour $unitId", e)
-            Result.failure(e)
-        }
-    }
-
-    suspend fun pushUnitState(
-        unitId: String,
-        operationalStatus: OperationalStatus,
-        equipment: List<String>,
+        status: PatrolStatus,
         isTracking: Boolean,
-        latitude: Double? = null,
-        longitude: Double? = null
-    ): Result<Unit> {
-        return try {
-            val updates = hashMapOf<String, Any?>(
-                "unitId" to unitId,
-                "unitName" to unitId,
-                "operationalStatus" to operationalStatus.code,
-                "operationalStatusLabel" to operationalStatus.label,
-                "equipment" to equipment,
-                "isTracking" to isTracking,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-            if (latitude != null && longitude != null) {
-                updates["latitude"] = latitude
-                updates["longitude"] = longitude
-            }
-            if (!isTracking) {
-                updates["speedKmh"] = 0f
-            }
+        sample: GpsSample?,
+        equipment: List<String> = listOf("Caméra piéton", "Terminal / Radio"),
+        recordHistory: Boolean = false
+    ) {
+        val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+        val docRef = firestore.collection("live_positions").document(cleanUnitId)
 
-            firestore.collection(liveCollection)
-                .document(unitId)
-                .set(updates, SetOptions.merge())
-                .await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Échec push état Firestore pour $unitId", e)
-            Result.failure(e)
+        val payload = hashMapOf<String, Any>(
+            "unitId" to cleanUnitId,
+            "operationalStatus" to status.code,
+            "operationalStatusLabel" to status.label,
+            "isTracking" to isTracking,
+            "speedKmh" to (sample?.speedKmh ?: 0.0),
+            "equipment" to equipment,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        if (sample != null) {
+            payload["latitude"] = sample.latitude
+            payload["longitude"] = sample.longitude
+        }
+
+        docRef.set(payload, SetOptions.merge())
+
+        if (recordHistory && sample != null && isTracking) {
+            docRef.collection("history").add(
+                hashMapOf(
+                    "latitude" to sample.latitude,
+                    "longitude" to sample.longitude,
+                    "speedKmh" to sample.speedKmh,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
         }
     }
 
-    companion object {
-        private const val TAG = "FirestoreLocationUploader"
+    fun observeCsuMessages(
+        unitId: String,
+        onUpdate: (List<CsuDispatchMessage>) -> Unit,
+        onError: (Exception) -> Unit = {}
+    ): ListenerRegistration {
+        val targetUnit = unitId.trim().lowercase()
+        return firestore.collection("missions")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(25)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+                val items = snapshot?.documents.orEmpty().mapNotNull { doc ->
+                    val assignedUnit = (doc.getString("unitId") ?: "").trim()
+                    if (assignedUnit.isNotEmpty() && assignedUnit.lowercase() != targetUnit) {
+                        return@mapNotNull null
+                    }
+                    CsuDispatchMessage(
+                        id = doc.id,
+                        unitId = assignedUnit,
+                        title = doc.getString("title") ?: "Message CSU",
+                        notes = doc.getString("notes") ?: "",
+                        acknowledgedBy = doc.getString("acknowledgedBy")
+                    )
+                }
+                onUpdate(items)
+            }
+    }
+
+    fun acknowledgeMessage(unitId: String, message: CsuDispatchMessage) {
+        val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+
+        firestore.collection("missions").document(message.id).set(
+            hashMapOf(
+                "acknowledgedBy" to cleanUnitId,
+                "acknowledgedAt" to FieldValue.serverTimestamp()
+            ),
+            SetOptions.merge()
+        )
+
+        firestore.collection("mci_logs").add(
+            hashMapOf(
+                "unitId" to cleanUnitId,
+                "type" to "ACK",
+                "message" to "Validé par $cleanUnitId : ${message.title}",
+                "createdAt" to FieldValue.serverTimestamp()
+            )
+        )
     }
 }
