@@ -15,16 +15,14 @@ data class GpsSample(
     val latitude: Double,
     val longitude: Double,
     val accuracyMeters: Float,
-    val speedMetersPerSec: Float,
-    val bearingDegrees: Float?,
-    val altitudeMeters: Double?
+    val speedMetersPerSec: Float
 )
 
 class ActiveLocationTracker(
     context: Context,
-    private val intervalMillis: Long = 3000L,
-    private val minUpdateIntervalMillis: Long = 1500L,
-    private val minDistanceMeters: Float = 1f,
+    private val intervalMillis: Long = 4000L,
+    private val minUpdateIntervalMillis: Long = 2000L,
+    private val minDistanceMeters: Float = 2f,
     private val onSampleReceived: (GpsSample) -> Unit
 ) {
 
@@ -49,9 +47,7 @@ class ActiveLocationTracker(
                     latitude = location.latitude,
                     longitude = location.longitude,
                     accuracyMeters = location.accuracy,
-                    speedMetersPerSec = if (location.hasSpeed()) location.speed else 0f,
-                    bearingDegrees = if (location.hasBearing()) location.bearing else null,
-                    altitudeMeters = if (location.hasAltitude()) location.altitude else null
+                    speedMetersPerSec = if (location.hasSpeed()) location.speed else 0f
                 )
             )
         }
