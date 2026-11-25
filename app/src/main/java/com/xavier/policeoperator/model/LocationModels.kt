@@ -10,7 +10,8 @@ enum class PatrolStatus(
     SUR_LIEUX("SUR_LIEUX", "Sur les lieux", 0xFF8B5CF6),
     CONTROLE_ROUTE("CONTROLE_ROUTE", "Contrôle route", 0xFF06B6D4),
     DISPONIBLE("DISPONIBLE", "Disponible", 0xFF16A34A),
-    PAUSE("PAUSE", "En pause", 0xFFD97706);
+    PAUSE("PAUSE", "En pause", 0xFFD97706),
+    FIN_DE_SERVICE("FIN_DE_SERVICE", "Fin de service", 0xFF475569);
 
     companion object {
         fun fromCode(code: String?): PatrolStatus {
@@ -19,6 +20,14 @@ enum class PatrolStatus(
         }
     }
 }
+
+val DEFAULT_EQUIPMENT_LIST = listOf(
+    "Caméra piéton",
+    "Terminal / Radio",
+    "Éthylotest / Dépistage",
+    "Trousse secours / DSA",
+    "Cônes / Signalisation"
+)
 
 data class GpsSample(
     val latitude: Double,
