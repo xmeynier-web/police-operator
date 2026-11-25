@@ -1,11 +1,11 @@
-package com.example.geotracker.xavier.policeoperator.location
+package com.xavier.policeoperator.location
 
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import com.example.geotracker.xavier.policeoperator.model.GpsSample
+import com.xavier.policeoperator.model.GpsSample
 
 class ActiveLocationTracker(
     context: Context,
