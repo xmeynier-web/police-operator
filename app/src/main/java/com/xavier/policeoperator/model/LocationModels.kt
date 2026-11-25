@@ -36,10 +36,8 @@ object OnboardEquipmentCatalog {
 
 data class LocationTelemetry(
     val unitId: String = "UNITE-01",
-    val unitName: String = "Unité 01",
     val operationalStatus: OperationalStatus = OperationalStatus.PATROUILLE,
     val selectedEquipment: Set<String> = setOf("Terminal / Radio", "Caméra piéton"),
-    val missionNote: String = "",
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracyMeters: Float? = null,
@@ -49,7 +47,7 @@ data class LocationTelemetry(
     val lastSyncError: String? = null,
     val isTracking: Boolean = false,
     val hasBackgroundPermission: Boolean = false,
-    val statusMessage: String = "En attente de démarrage"
+    val statusMessage: String = "Prêt"
 )
 
 object LocationRepository {
@@ -58,15 +56,9 @@ object LocationRepository {
 
     private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
 
-    fun setUnitIdentity(unitId: String, unitName: String) {
+    fun setUnitId(unitId: String) {
         val cleanedId = unitId.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
-        val cleanedName = unitName.trim().ifEmpty { cleanedId }
-        _telemetry.update {
-            it.copy(
-                unitId = cleanedId,
-                unitName = cleanedName
-            )
-        }
+        _telemetry.update { it.copy(unitId = cleanedId) }
     }
 
     fun updateOperationalStatus(status: OperationalStatus) {
@@ -84,10 +76,6 @@ object LocationRepository {
 
     fun setEquipmentList(items: Set<String>) {
         _telemetry.update { it.copy(selectedEquipment = items) }
-    }
-
-    fun updateMissionNote(note: String) {
-        _telemetry.update { it.copy(missionNote = note.trim()) }
     }
 
     fun setBackgroundPermissionState(granted: Boolean) {
@@ -135,7 +123,7 @@ object LocationRepository {
                 speedKmh = computedSpeedKmh,
                 lastUpdateFormatted = now,
                 isTracking = true,
-                statusMessage = "MAJ GPS à $now"
+                statusMessage = "GPS à $now"
             )
         }
     }
