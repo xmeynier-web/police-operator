@@ -1,27 +1,21 @@
-package com.xavier.policeoperator.ui
+package com.example.geotracker.xavier.policeoperator.ui
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,432 +24,415 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Badge
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Flag
-import androidx.compose.material.icons.outlined.GpsFixed
-import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.Stop
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.xavier.policeoperator.model.LocationRepository
-import com.xavier.policeoperator.model.LocationTelemetry
-import com.xavier.policeoperator.model.OnboardEquipmentCatalog
-import com.xavier.policeoperator.model.OperationalStatus
-import com.xavier.policeoperator.service.LocationService
-import java.util.Locale
+import com.example.geotracker.R
+import com.example.geotracker.xavier.policeoperator.data.FirestoreLocationUploader
+import com.example.geotracker.xavier.policeoperator.location.ActiveLocationTracker
+import com.example.geotracker.xavier.policeoperator.model.CsuDispatchMessage
+import com.example.geotracker.xavier.policeoperator.model.GpsSample
+import com.example.geotracker.xavier.policeoperator.model.PatrolStatus
+import com.example.geotracker.xavier.policeoperator.service.LocationService
 
 class MainActivity : ComponentActivity() {
+
+    private val uploader = FirestoreLocationUploader()
+    private var tracker: ActiveLocationTracker? = null
+    private var onSampleCallback: ((GpsSample) -> Unit)? = null
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val fineOk = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (fineOk) {
+            tracker?.start()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+
+        tracker = ActiveLocationTracker(this) { sample ->
+            onSampleCallback?.invoke(sample)
+        }
+
         setContent {
-            MaterialTheme {
-                OperatorConsoleScreen()
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun OperatorConsoleScreen() {
-    val context = LocalContext.current
-    val telemetry by LocationRepository.telemetry.collectAsState()
-
-    var unitIdInput by remember { mutableStateOf(telemetry.unitId) }
-    var customEquipmentInput by remember { mutableStateOf("") }
-
-    fun applyUnitId(): String {
-        val cleaned = unitIdInput.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
-        unitIdInput = cleaned
-        LocationRepository.setUnitId(cleaned)
-        return cleaned
-    }
-
-    LaunchedEffect(Unit) {
-        val granted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.ACCESS_BACKGROUND_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        } else {
-            true
-        }
-        LocationRepository.setBackgroundPermissionState(granted)
-    }
-
-    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        LocationRepository.setBackgroundPermissionState(isGranted)
-        val id = applyUnitId()
-        LocationService.start(
-            context = context,
-            unitId = id,
-            status = telemetry.operationalStatus,
-            equipment = telemetry.selectedEquipment.toList().sorted()
-        )
-    }
-
-    val foregroundPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] ?: false
-
-        if (fineGranted || coarseGranted) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                val bgGranted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-                LocationRepository.setBackgroundPermissionState(bgGranted)
-
-                if (!bgGranted) {
-                    backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-                    return@rememberLauncherForActivityResult
+            PoliceOpScreen(
+                uploader = uploader,
+                onRequestStart = { unitId, status ->
+                    startTrackingService(unitId, status)
+                },
+                onRequestStop = { unitId, status, lastSample ->
+                    stopTrackingService(unitId, status, lastSample)
+                },
+                onStatusChanged = { unitId, status, isTracking, lastSample ->
+                    uploader.upsertUnitState(
+                        unitId = unitId,
+                        status = status,
+                        isTracking = isTracking,
+                        sample = lastSample,
+                        recordHistory = false
+                    )
+                    if (isTracking) {
+                        startTrackingService(unitId, status)
+                    }
+                },
+                bindSampleListener = { cb ->
+                    onSampleCallback = cb
                 }
-            }
-            val id = applyUnitId()
-            LocationService.start(
-                context = context,
-                unitId = id,
-                status = telemetry.operationalStatus,
-                equipment = telemetry.selectedEquipment.toList().sorted()
             )
-        } else {
-            Toast.makeText(context, "Permission GPS refusée", Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun requestPermissionsAndStart() {
+    private fun ensureLocationPermissions() {
         val perms = buildList {
             add(Manifest.permission.ACCESS_FINE_LOCATION)
             add(Manifest.permission.ACCESS_COARSE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }
-        }.toTypedArray()
-        foregroundPermissionLauncher.launch(perms)
+        }
+        val missing = perms.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
+        } else {
+            tracker?.start()
+        }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Police Operator",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "${telemetry.unitId} · ${telemetry.statusMessage}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { openAppSettings(context) }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Settings,
-                            contentDescription = "Paramètres"
-                        )
-                    }
-                }
-            )
+    private fun startTrackingService(unitId: String, status: PatrolStatus) {
+        ensureLocationPermissions()
+        val intent = Intent(this, LocationService::class.java).apply {
+            action = LocationService.ACTION_START
+            putExtra(LocationService.EXTRA_UNIT_ID, unitId)
+            putExtra(LocationService.EXTRA_STATUS_CODE, status.code)
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            LiveStatusAndSyncBar(telemetry = telemetry)
+        ContextCompat.startForegroundService(this, intent)
+    }
 
-            UnitIdCard(
-                unitId = unitIdInput,
-                onUnitIdChange = { unitIdInput = it },
-                onApplyUnitId = { applyUnitId() }
-            )
-
-            OperationalStatusGrid(
-                selectedStatus = telemetry.operationalStatus,
-                onSelectStatus = { LocationRepository.updateOperationalStatus(it) }
-            )
-
-            EquipmentChecklistCard(
-                selectedEquipment = telemetry.selectedEquipment,
-                customEquipmentInput = customEquipmentInput,
-                onCustomEquipmentInputChange = { customEquipmentInput = it },
-                onToggleItem = { LocationRepository.toggleEquipment(it) },
-                onAddCustomItem = {
-                    val trimmed = customEquipmentInput.trim()
-                    if (trimmed.isNotEmpty()) {
-                        val next = telemetry.selectedEquipment.toMutableSet().apply { add(trimmed) }
-                        LocationRepository.setEquipmentList(next)
-                        customEquipmentInput = ""
-                    }
-                }
-            )
-
-            GeolocationSummaryCard(
-                telemetry = telemetry,
-                onCopyCoords = {
-                    val lat = telemetry.latitude
-                    val lon = telemetry.longitude
-                    if (lat != null && lon != null) {
-                        val txt = String.format(Locale.US, "%.6f, %.6f", lat, lon)
-                        copyToClipboard(context, "Position", txt)
-                        Toast.makeText(context, "Position copiée", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
-
-            ActionButtonsRow(
-                isTracking = telemetry.isTracking,
-                onStart = { requestPermissionsAndStart() },
-                onStop = {
-                    val id = applyUnitId()
-                    LocationService.stop(
-                        context = context,
-                        unitId = id,
-                        status = telemetry.operationalStatus,
-                        equipment = telemetry.selectedEquipment.toList().sorted()
-                    )
-                }
-            )
+    private fun stopTrackingService(unitId: String, status: PatrolStatus, lastSample: GpsSample?) {
+        tracker?.stop()
+        uploader.upsertUnitState(
+            unitId = unitId,
+            status = status,
+            isTracking = false,
+            sample = lastSample,
+            recordHistory = false
+        )
+        val intent = Intent(this, LocationService::class.java).apply {
+            action = LocationService.ACTION_STOP
         }
+        startService(intent)
+    }
+
+    override fun onDestroy() {
+        tracker?.stop()
+        onSampleCallback = null
+        super.onDestroy()
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LiveStatusAndSyncBar(telemetry: LocationTelemetry) {
-    val bg = if (telemetry.isTracking) Color(0xFFDCFCE7) else MaterialTheme.colorScheme.surfaceContainerHigh
-    val fg = if (telemetry.isTracking) Color(0xFF14532D) else MaterialTheme.colorScheme.onSurface
-    val dot = if (telemetry.isTracking) Color(0xFF16A34A) else Color(0xFF64748B)
+private fun PoliceOpScreen(
+    uploader: FirestoreLocationUploader,
+    onRequestStart: (String, PatrolStatus) -> Unit,
+    onRequestStop: (String, PatrolStatus, GpsSample?) -> Unit,
+    onStatusChanged: (String, PatrolStatus, Boolean, GpsSample?) -> Unit,
+    bindSampleListener: (((GpsSample) -> Unit)?) -> Unit
+) {
+    var unitId by remember { mutableStateOf("ALPHA 1") }
+    var currentStatus by remember { mutableStateOf(PatrolStatus.PATROUILLE) }
+    var isTracking by remember { mutableStateOf(false) }
+    var lastSample by remember { mutableStateOf<GpsSample?>(null) }
+    val messages = remember { mutableStateListOf<CsuDispatchMessage>() }
+    val localAckIds = remember { mutableStateListOf<String>() }
+
+    DisposableEffect(Unit) {
+        bindSampleListener { sample ->
+            lastSample = sample
+        }
+        onDispose {
+            bindSampleListener(null)
+        }
+    }
+
+    DisposableEffect(unitId) {
+        val reg = uploader.observeCsuMessages(
+            unitId = unitId,
+            onUpdate = { list ->
+                messages.clear()
+                messages.addAll(list)
+            }
+        )
+        onDispose { reg.remove() }
+    }
+
+    LaunchedEffect(Unit) {
+        uploader.upsertUnitState(
+            unitId = unitId,
+            status = currentStatus,
+            isTracking = false,
+            sample = null,
+            recordHistory = false
+        )
+    }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = bg
+        modifier = Modifier.fillMaxSize(),
+        color = Color(0xFF0F172A)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF162032))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Box(
                     modifier = Modifier
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(dot)
-                )
+                        .size(36.dp)
+                        .background(Color(0xFF1E293B), RoundedCornerShape(9.dp))
+                        .border(1.5.dp, Color(currentStatus.colorHex), RoundedCornerShape(9.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_police_op_logo),
+                        contentDescription = "Icône Police OP",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = telemetry.operationalStatus.label.uppercase(Locale.FRANCE),
-                    color = fg,
+                    text = "Police OP",
+                    color = Color(0xFFF8FAFC),
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val hasError = telemetry.lastSyncError != null
-                Icon(
-                    imageVector = if (hasError) Icons.Outlined.CloudOff else Icons.Outlined.CloudDone,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = if (hasError) MaterialTheme.colorScheme.error else fg
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (hasError) "Erreur synchro" else "Synchro ${telemetry.lastSyncFormatted}",
-                    color = if (hasError) MaterialTheme.colorScheme.error else fg,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun UnitIdCard(
-    unitId: String,
-    onUnitIdChange: (String) -> Unit,
-    onApplyUnitId: () -> Unit
-) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.Badge,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "INDICATIF DE L'UNITÉ",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                Button(
+                    onClick = {
+                        val nextTracking = !isTracking
+                        isTracking = nextTracking
+                        if (nextTracking) {
+                            onRequestStart(unitId, currentStatus)
+                        } else {
+                            onRequestStop(unitId, currentStatus, lastSample)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isTracking) Color(0xFFDC2626) else Color(0xFF16A34A),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isTracking) "Stop" else "Actif",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1E293B))
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = unitId,
-                    onValueChange = onUnitIdChange,
-                    singleLine = true,
-                    label = { Text("Indicatif (ex. UNITE-01)") },
+                Icon(
+                    imageVector = Icons.Filled.GpsFixed,
+                    contentDescription = null,
+                    tint = if (isTracking) Color(0xFF4ADE80) else Color(0xFF94A3B8),
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                val gpsSummary = lastSample?.let { s ->
+                    String.format(
+                        "%.5f, %.5f · %.1f km/h",
+                        s.latitude,
+                        s.longitude,
+                        s.speedKmh
+                    )
+                } ?: "GPS en attente"
+                Text(
+                    text = gpsSummary,
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                OutlinedButton(
-                    onClick = onApplyUnitId,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(54.dp)
-                ) {
-                    Text("Valider")
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = unitId,
+                    onValueChange = { unitId = it.uppercase() },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.width(104.dp)
+                )
+            }
+
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                PatrolStatus.entries.forEach { status ->
+                    val selected = currentStatus == status
+                    val badgeColor = Color(status.colorHex)
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            currentStatus = status
+                            onStatusChanged(unitId, status, isTracking, lastSample)
+                        },
+                        label = {
+                            Text(
+                                text = status.label,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Color(0xFF162032),
+                            labelColor = Color(0xFFE2E8F0),
+                            selectedContainerColor = badgeColor,
+                            selectedLabelColor = if (status == PatrolStatus.CONTROLE_ROUTE) {
+                                Color(0xFF082F49)
+                            } else {
+                                Color.White
+                            }
+                        )
+                    )
                 }
             }
-        }
-    }
-}
 
-@Composable
-private fun OperationalStatusGrid(
-    selectedStatus: OperationalStatus,
-    onSelectStatus: (OperationalStatus) -> Unit
-) {
-    val rows = OperationalStatus.entries.chunked(2)
+            HorizontalDivider(color = Color(0xFF334155))
 
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.Flag,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "STATUT OPÉRATIONNEL",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            Text(
+                text = "Messages CSU",
+                color = Color(0xFF38BDF8),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
 
-            rows.forEach { pair ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    pair.forEach { status ->
-                        val isSelected = status == selectedStatus
-                        val accentColor = when (status) {
-                            OperationalStatus.PATROUILLE -> Color(0xFF2563EB)
-                            OperationalStatus.INTERVENTION -> Color(0xFFDC2626)
-                            OperationalStatus.DISPONIBLE -> Color(0xFF16A34A)
-                            OperationalStatus.PAUSE -> Color(0xFFD97706)
-                        }
-
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(54.dp)
-                                .clickable { onSelectStatus(status) },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isSelected) accentColor else MaterialTheme.colorScheme.surfaceContainerLow
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(messages, key = { it.id }) { msg ->
+                    val isAck = localAckIds.contains(msg.id) || !msg.acknowledgedBy.isNullOrBlank()
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = if (isAck) Color(0xFF16A34A) else Color(0xFF38BDF8),
+                                shape = RoundedCornerShape(8.dp)
                             ),
-                            border = BorderStroke(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) accentColor else MaterialTheme.colorScheme.outlineVariant
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF162032)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = msg.title,
+                                color = Color(0xFFF8FAFC),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
+                            if (msg.notes.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = status.label,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    text = msg.notes,
+                                    color = Color(0xFFCBD5E1),
+                                    fontSize = 12.sp
                                 )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (!isAck) {
+                                            localAckIds.add(msg.id)
+                                            uploader.acknowledgeMessage(unitId, msg)
+                                        }
+                                    },
+                                    enabled = !isAck,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isAck) Color(0xFF1E293B) else Color(0xFF16A34A),
+                                        disabledContainerColor = Color(0xFF1E293B),
+                                        contentColor = Color.White,
+                                        disabledContentColor = Color(0xFF4ADE80)
+                                    ),
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    if (isAck) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
+                                    Text(
+                                        text = if (isAck) "Validé" else "Valider",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
@@ -463,274 +440,4 @@ private fun OperationalStatusGrid(
             }
         }
     }
-}
-
-@Composable
-private fun EquipmentChecklistCard(
-    selectedEquipment: Set<String>,
-    customEquipmentInput: String,
-    onCustomEquipmentInputChange: (String) -> Unit,
-    onToggleItem: (String) -> Unit,
-    onAddCustomItem: () -> Unit
-) {
-    val allChoices = remember(selectedEquipment) {
-        (OnboardEquipmentCatalog.defaultItems + selectedEquipment).distinct()
-    }
-
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.Inventory2,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "MATÉRIEL EMBARQUÉ",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Text(
-                    text = "${selectedEquipment.size} coché(s)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            allChoices.forEach { item ->
-                val checked = item in selectedEquipment
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onToggleItem(item) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (checked) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLow
-                    },
-                    border = BorderStroke(
-                        1.dp,
-                        if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = item,
-                            fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Icon(
-                            imageVector = if (checked) Icons.Outlined.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
-                            contentDescription = null,
-                            tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = customEquipmentInput,
-                    onValueChange = onCustomEquipmentInputChange,
-                    singleLine = true,
-                    label = { Text("Autre équipement") },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onAddCustomItem) {
-                    Icon(
-                        imageVector = Icons.Outlined.Add,
-                        contentDescription = "Ajouter équipement"
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GeolocationSummaryCard(
-    telemetry: LocationTelemetry,
-    onCopyCoords: () -> Unit
-) {
-    val hasCoords = telemetry.latitude != null && telemetry.longitude != null
-    val coordsText = if (hasCoords) {
-        String.format(Locale.US, "%.5f, %.5f", telemetry.latitude, telemetry.longitude)
-    } else {
-        "En attente du signal GPS..."
-    }
-    val accuracyText = telemetry.accuracyMeters?.let {
-        String.format(Locale.FRANCE, "± %.0f m", it)
-    } ?: "--"
-
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.LocationOn,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "GÉOLOCALISATION",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                IconButton(onClick = onCopyCoords, enabled = hasCoords) {
-                    Icon(
-                        imageVector = Icons.Outlined.ContentCopy,
-                        contentDescription = "Copier coordonnées"
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerLow
-            ) {
-                Text(
-                    text = coordsText,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.Speed,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = String.format(Locale.FRANCE, "%.1f km/h", telemetry.speedKmh),
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Outlined.GpsFixed,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = accuracyText, fontWeight = FontWeight.SemiBold)
-                }
-
-                Text(
-                    text = telemetry.lastUpdateFormatted,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ActionButtonsRow(
-    isTracking: Boolean,
-    onStart: () -> Unit,
-    onStop: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Button(
-            onClick = onStart,
-            enabled = !isTracking,
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Icon(imageVector = Icons.Outlined.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Démarrer", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        }
-
-        OutlinedButton(
-            onClick = onStop,
-            enabled = isTracking,
-            modifier = Modifier
-                .weight(1f)
-                .height(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error
-            )
-        ) {
-            Icon(imageVector = Icons.Outlined.Stop, contentDescription = null)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Arrêter", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-private fun copyToClipboard(context: Context, label: String, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
-}
-
-private fun openAppSettings(context: Context) {
-    val intent = Intent(
-        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-        Uri.fromParts("package", context.packageName, null)
-    ).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    context.startActivity(intent)
 }
