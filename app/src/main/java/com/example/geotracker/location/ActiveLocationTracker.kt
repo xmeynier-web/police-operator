@@ -2,71 +2,69 @@ package com.example.geotracker.location
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.os.Looper
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.Granularity
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-
-data class GpsSample(
-    val latitude: Double,
-    val longitude: Double,
-    val accuracyMeters: Float,
-    val speedMetersPerSec: Float
-)
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import com.example.geotracker.model.GpsSample
 
 class ActiveLocationTracker(
     context: Context,
-    private val intervalMillis: Long = 4000L,
-    private val minUpdateIntervalMillis: Long = 2000L,
-    private val minDistanceMeters: Float = 2f,
-    private val onSampleReceived: (GpsSample) -> Unit
+    private val onSample: (GpsSample) -> Unit
 ) {
+    private val appContext = context.applicationContext
+    private val locationManager =
+        appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    private var active = false
 
-    private val fusedLocationClient: FusedLocationProviderClient =
-        LocationServices.getFusedLocationProviderClient(context.applicationContext)
-
-    private var isRunning = false
-
-    private val locationRequest: LocationRequest =
-        LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, intervalMillis).apply {
-            setMinUpdateIntervalMillis(minUpdateIntervalMillis)
-            setMinUpdateDistanceMeters(minDistanceMeters)
-            setGranularity(Granularity.GRANULARITY_FINE)
-            setWaitForAccurateLocation(false)
-        }.build()
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(locationResult: LocationResult) {
-            val location = locationResult.lastLocation ?: return
-            onSampleReceived(
-                GpsSample(
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    accuracyMeters = location.accuracy,
-                    speedMetersPerSec = if (location.hasSpeed()) location.speed else 0f
-                )
-            )
+    private val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            onSample(location.toGpsSample())
         }
     }
 
     @SuppressLint("MissingPermission")
-    fun start() {
-        if (isRunning) return
-        isRunning = true
-        fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            Looper.getMainLooper()
+    fun start(minTimeMs: Long = 3000L, minDistanceMeters: Float = 5f) {
+        if (active) return
+        active = true
+
+        val providers = listOfNotNull(
+            LocationManager.GPS_PROVIDER.takeIf {
+                locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            },
+            LocationManager.NETWORK_PROVIDER.takeIf {
+                locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+            }
         )
+
+        providers.firstOrNull()?.let { provider ->
+            locationManager.getLastKnownLocation(provider)?.let { last ->
+                onSample(last.toGpsSample())
+            }
+        }
+
+        for (provider in providers) {
+            locationManager.requestLocationUpdates(
+                provider,
+                minTimeMs,
+                minDistanceMeters,
+                listener
+            )
+        }
     }
 
     fun stop() {
-        if (!isRunning) return
-        isRunning = false
-        fusedLocationClient.removeLocationUpdates(locationCallback)
+        active = false
+        locationManager.removeUpdates(listener)
+    }
+
+    private fun Location.toGpsSample(): GpsSample {
+        val speedKmh = if (hasSpeed() && speed > 0f) (speed * 3.6f).toDouble() else 0.0
+        return GpsSample(
+            latitude = latitude,
+            longitude = longitude,
+            speedKmh = speedKmh,
+            accuracyMeters = accuracy,
+            timestampMillis = time
+        )
     }
 }
