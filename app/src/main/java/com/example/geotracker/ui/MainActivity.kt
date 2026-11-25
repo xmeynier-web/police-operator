@@ -59,13 +59,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.geotracker.R
 import com.example.geotracker.data.FirestoreLocationUploader
 import com.example.geotracker.location.ActiveLocationTracker
 import com.example.geotracker.model.CsuDispatchMessage
 import com.example.geotracker.model.GpsSample
 import com.example.geotracker.model.PatrolStatus
 import com.example.geotracker.service.LocationService
+import com.xavier.policeoperator.R
 
 class MainActivity : ComponentActivity() {
 
