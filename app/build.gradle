@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace "com.example.geotracker"
+    namespace "com.xavier.policeoperator"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.example.geotracker"
+        applicationId "com.xavier.policeoperator"
         minSdk 26
         targetSdk 35
         versionCode 1
