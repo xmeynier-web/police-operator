@@ -17,7 +17,7 @@ class FirestoreLocationUploader(
         status: PatrolStatus,
         isTracking: Boolean,
         sample: GpsSample?,
-        equipment: List<String> = emptyList(),
+        equipment: List<String> = listOf("Caméra piéton", "Terminal / Radio"),
         recordHistory: Boolean = false
     ) {
         val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
