@@ -1,4 +1,4 @@
-package com.example.geotracker.xavier.policeoperator.service
+package com.xavier.policeoperator.service
 
 import android.app.Notification
 import android.app.NotificationChannel
