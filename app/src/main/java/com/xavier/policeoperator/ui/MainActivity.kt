@@ -1,4 +1,4 @@
-package com.example.geotracker.xavier.policeoperator.ui
+package com.xavier.policeoperator.ui
 
 import android.Manifest
 import android.content.Intent
@@ -59,13 +59,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.geotracker.R
-import com.example.geotracker.xavier.policeoperator.data.FirestoreLocationUploader
-import com.example.geotracker.xavier.policeoperator.location.ActiveLocationTracker
-import com.example.geotracker.xavier.policeoperator.model.CsuDispatchMessage
-import com.example.geotracker.xavier.policeoperator.model.GpsSample
-import com.example.geotracker.xavier.policeoperator.model.PatrolStatus
-import com.example.geotracker.xavier.policeoperator.service.LocationService
+import com.xavier.policeoperator.R
+import com.xavier.policeoperator.data.FirestoreLocationUploader
+import com.xavier.policeoperator.location.ActiveLocationTracker
+import com.xavier.policeoperator.model.CsuDispatchMessage
+import com.xavier.policeoperator.model.GpsSample
+import com.xavier.policeoperator.model.PatrolStatus
+import com.xavier.policeoperator.service.LocationService
 
 class MainActivity : ComponentActivity() {
 
