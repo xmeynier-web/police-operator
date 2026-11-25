@@ -1,4 +1,4 @@
-package com.example.geotracker.xavier.policeoperator.model
+package com.xavier.policeoperator.model
 
 enum class PatrolStatus(
     val code: String,
