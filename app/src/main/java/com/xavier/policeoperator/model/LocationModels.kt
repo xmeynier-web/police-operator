@@ -1,146 +1,37 @@
-package com.xavier.policeoperator.model
+package com.example.geotracker.xavier.policeoperator.model
 
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-
-enum class OperationalStatus(
+enum class PatrolStatus(
     val code: String,
-    val label: String
+    val label: String,
+    val colorHex: Long
 ) {
-    PATROUILLE("PATROUILLE", "En patrouille"),
-    INTERVENTION("INTERVENTION", "En intervention"),
-    DISPONIBLE("DISPONIBLE", "Disponible"),
-    PAUSE("PAUSE", "En pause");
+    PATROUILLE("PATROUILLE", "En patrouille", 0xFF2563EB),
+    INTERVENTION("INTERVENTION", "En intervention", 0xFFDC2626),
+    SUR_LIEUX("SUR_LIEUX", "Sur les lieux", 0xFF8B5CF6),
+    CONTROLE_ROUTE("CONTROLE_ROUTE", "Contrôle route", 0xFF06B6D4),
+    DISPONIBLE("DISPONIBLE", "Disponible", 0xFF16A34A),
+    PAUSE("PAUSE", "En pause", 0xFFD97706);
 
     companion object {
-        fun fromCode(code: String?): OperationalStatus {
-            return entries.firstOrNull { it.code.equals(code, ignoreCase = true) } ?: PATROUILLE
+        fun fromCode(code: String?): PatrolStatus {
+            val normalized = code?.trim()?.uppercase()
+            return entries.firstOrNull { it.code == normalized } ?: PATROUILLE
         }
     }
 }
 
-object OnboardEquipmentCatalog {
-    val defaultItems: List<String> = listOf(
-        "Terminal / Radio",
-        "Caméra piéton",
-        "Éclairage / Signalétique",
-        "Trousse premiers secours",
-        "Équipement protection"
-    )
-}
-
-data class LocationTelemetry(
-    val unitId: String = "UNITE-01",
-    val operationalStatus: OperationalStatus = OperationalStatus.PATROUILLE,
-    val selectedEquipment: Set<String> = setOf("Terminal / Radio", "Caméra piéton"),
-    val latitude: Double? = null,
-    val longitude: Double? = null,
-    val accuracyMeters: Float? = null,
-    val speedKmh: Float = 0f,
-    val lastUpdateFormatted: String = "--:--:--",
-    val lastSyncFormatted: String = "--:--:--",
-    val lastSyncError: String? = null,
-    val isTracking: Boolean = false,
-    val hasBackgroundPermission: Boolean = false,
-    val statusMessage: String = "Prêt"
+data class GpsSample(
+    val latitude: Double,
+    val longitude: Double,
+    val speedKmh: Double = 0.0,
+    val accuracyMeters: Float = 0f,
+    val timestampMillis: Long = System.currentTimeMillis()
 )
 
-object LocationRepository {
-    private val _telemetry = MutableStateFlow(LocationTelemetry())
-    val telemetry: StateFlow<LocationTelemetry> = _telemetry.asStateFlow()
-
-    private val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
-
-    fun setUnitId(unitId: String) {
-        val cleanedId = unitId.trim().uppercase(Locale.ROOT).ifEmpty { "UNITE-01" }
-        _telemetry.update { it.copy(unitId = cleanedId) }
-    }
-
-    fun updateOperationalStatus(status: OperationalStatus) {
-        _telemetry.update { it.copy(operationalStatus = status) }
-    }
-
-    fun toggleEquipment(item: String) {
-        _telemetry.update { current ->
-            val updated = current.selectedEquipment.toMutableSet().apply {
-                if (!add(item)) remove(item)
-            }
-            current.copy(selectedEquipment = updated)
-        }
-    }
-
-    fun setEquipmentList(items: Set<String>) {
-        _telemetry.update { it.copy(selectedEquipment = items) }
-    }
-
-    fun setBackgroundPermissionState(granted: Boolean) {
-        _telemetry.update { it.copy(hasBackgroundPermission = granted) }
-    }
-
-    fun setTrackingStarted(hasBackgroundPermission: Boolean) {
-        _telemetry.update {
-            it.copy(
-                isTracking = true,
-                hasBackgroundPermission = hasBackgroundPermission,
-                lastSyncError = null,
-                statusMessage = if (hasBackgroundPermission) {
-                    "Actif · Arrière-plan OK"
-                } else {
-                    "Actif · Premier plan"
-                }
-            )
-        }
-    }
-
-    fun setTrackingStopped() {
-        _telemetry.update {
-            it.copy(
-                isTracking = false,
-                speedKmh = 0f,
-                statusMessage = "Suivi arrêté"
-            )
-        }
-    }
-
-    fun updateLocation(
-        latitude: Double,
-        longitude: Double,
-        accuracyMeters: Float,
-        speedMetersPerSec: Float
-    ) {
-        val now = timeFormatter.format(Date())
-        val computedSpeedKmh = if (speedMetersPerSec > 0.15f) speedMetersPerSec * 3.6f else 0f
-        _telemetry.update { current ->
-            current.copy(
-                latitude = latitude,
-                longitude = longitude,
-                accuracyMeters = accuracyMeters,
-                speedKmh = computedSpeedKmh,
-                lastUpdateFormatted = now,
-                isTracking = true,
-                statusMessage = "GPS à $now"
-            )
-        }
-    }
-
-    fun recordSyncSuccess() {
-        val now = timeFormatter.format(Date())
-        _telemetry.update {
-            it.copy(
-                lastSyncFormatted = now,
-                lastSyncError = null
-            )
-        }
-    }
-
-    fun recordSyncError(message: String?) {
-        _telemetry.update {
-            it.copy(lastSyncError = message ?: "Erreur réseau")
-        }
-    }
-}
+data class CsuDispatchMessage(
+    val id: String,
+    val unitId: String,
+    val title: String,
+    val notes: String,
+    val acknowledgedBy: String? = null
+)
