@@ -1,13 +1,13 @@
-package com.example.geotracker.xavier.policeoperator.data
+package com.xavier.policeoperator.data
 
-import com.example.geotracker.xavier.policeoperator.model.CsuDispatchMessage
-import com.example.geotracker.xavier.policeoperator.model.GpsSample
-import com.example.geotracker.xavier.policeoperator.model.PatrolStatus
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.xavier.policeoperator.model.CsuDispatchMessage
+import com.xavier.policeoperator.model.GpsSample
+import com.xavier.policeoperator.model.PatrolStatus
 
 class FirestoreLocationUploader(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
