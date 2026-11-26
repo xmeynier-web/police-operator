@@ -1,20 +1,13 @@
 package com.xavier.policeoperator.ui
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.location.Geocoder
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColor
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -38,10 +32,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,13 +54,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -82,13 +74,6 @@ import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 import com.xavier.policeoperator.service.LocationService
-import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
 
@@ -234,42 +219,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private suspend fun resolveStreetAddress(context: Context, sample: GpsSample?): String {
-    if (sample == null) return ""
-    val fallback = String.format(Locale.FRANCE, "%.5f, %.5f", sample.latitude, sample.longitude)
-    if (!Geocoder.isPresent()) return fallback
-
-    return withContext(Dispatchers.IO) {
-        runCatching {
-            val geocoder = Geocoder(context, Locale.FRANCE)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                suspendCancellableCoroutine { cont ->
-                    geocoder.getFromLocation(
-                        sample.latitude,
-                        sample.longitude,
-                        1,
-                        object : Geocoder.GeocodeListener {
-                            override fun onGeocode(addresses: MutableList<android.location.Address>) {
-                                val line = addresses.firstOrNull()?.getAddressLine(0)?.trim()
-                                cont.resume(if (!line.isNullOrEmpty()) line else fallback)
-                            }
-
-                            override fun onError(errorMessage: String?) {
-                                cont.resume(fallback)
-                            }
-                        }
-                    )
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                val list = geocoder.getFromLocation(sample.latitude, sample.longitude, 1)
-                val line = list?.firstOrNull()?.getAddressLine(0)?.trim()
-                if (!line.isNullOrEmpty()) line else fallback
-            }
-        }.getOrDefault(fallback)
-    }
-}
-
 @Composable
 private fun PoliceOpScreen(
     uploader: FirestoreLocationUploader,
@@ -279,9 +228,6 @@ private fun PoliceOpScreen(
     onStateChanged: (String, Int, PatrolStatus, Boolean, List<String>, GpsSample?) -> Unit,
     bindSampleListener: (((GpsSample) -> Unit)?) -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
     var unitId by remember { mutableStateOf("ALPHA 1") }
     var crewCountText by remember { mutableStateOf("2") }
     val crewCount = crewCountText.toIntOrNull()?.coerceAtLeast(1) ?: 1
@@ -290,10 +236,6 @@ private fun PoliceOpScreen(
     var isTracking by remember { mutableStateOf(false) }
     var lastSample by remember { mutableStateOf<GpsSample?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
-
-    var sosArmed by remember { mutableStateOf(false) }
-    var sosActive by remember { mutableStateOf(false) }
-    var sosAddress by remember { mutableStateOf("") }
 
     val selectedEquipment = remember { mutableStateListOf<String>() }
     val messages = remember { mutableStateListOf<CsuDispatchMessage>() }
@@ -309,28 +251,9 @@ private fun PoliceOpScreen(
         DEFAULT_EQUIPMENT_LIST.chunked(2)
     }
 
-    LaunchedEffect(sosArmed) {
-        if (sosArmed) {
-            delay(4000L)
-            sosArmed = false
-        }
-    }
-
     DisposableEffect(Unit) {
         bindSampleListener { sample ->
-            val hadNoSample = (lastSample == null)
             lastSample = sample
-            if (sosActive && hadNoSample) {
-                scope.launch {
-                    val resolved = resolveStreetAddress(context, sample)
-                    sosAddress = resolved
-                    uploader.updateSosAddress(
-                        unitId = unitId,
-                        sample = sample,
-                        address = resolved
-                    )
-                }
-            }
         }
         onDispose {
             bindSampleListener(null)
@@ -338,6 +261,7 @@ private fun PoliceOpScreen(
     }
 
     DisposableEffect(unitId) {
+        localAckIds.clear()
         val reg = uploader.observeCsuMessages(
             unitId = unitId,
             onUpdate = { list ->
@@ -367,17 +291,6 @@ private fun PoliceOpScreen(
         )
     }
 
-    val sosPulseTransition = rememberInfiniteTransition(label = "sos_pulse")
-    val sosPulseColor by sosPulseTransition.animateColor(
-        initialValue = Color(0xFFDC2626),
-        targetValue = Color(0xFF7F1D1D),
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 550),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "sos_color"
-    )
-
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = Color(0xFF0F172A)
@@ -385,378 +298,68 @@ private fun PoliceOpScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .safeDrawingPadding(),
             contentAlignment = Alignment.TopCenter
         ) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .widthIn(max = 580.dp)
+                    .widthIn(max = 580.dp),
+                contentPadding = PaddingValues(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = 10.dp,
+                    bottom = 64.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF162032), RoundedCornerShape(12.dp))
-                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
+                item(key = "header") {
+                    Row(
                         modifier = Modifier
-                            .size(44.dp)
-                            .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
-                            .border(2.dp, Color(currentStatus.colorHex), RoundedCornerShape(10.dp)),
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .background(Color(0xFF162032), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_police_op_logo),
-                            contentDescription = "Icône Police OP",
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Police OP",
-                            color = Color(0xFFF8FAFC),
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Statut : ${currentStatus.label}",
-                            color = Color(currentStatus.colorHex),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Button(
-                        onClick = {
-                            val nextTracking = !isTracking
-                            isTracking = nextTracking
-                            if (nextTracking) {
-                                if (currentStatus == PatrolStatus.FIN_DE_SERVICE) {
-                                    currentStatus = PatrolStatus.PATROUILLE
-                                }
-                                onRequestStart(
-                                    unitId,
-                                    crewCount,
-                                    currentStatus,
-                                    selectedEquipment.toList()
-                                )
-                            } else {
-                                onRequestStop(
-                                    unitId,
-                                    crewCount,
-                                    currentStatus,
-                                    selectedEquipment.toList(),
-                                    lastSample
-                                )
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isTracking) Color(0xFFDC2626) else Color(0xFF16A34A),
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Text(
-                            text = if (isTracking) "Stop" else "Actif",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.GpsFixed,
-                        contentDescription = null,
-                        tint = if (isTracking) Color(0xFF4ADE80) else Color(0xFF94A3B8),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    val gpsSummary = lastSample?.let { s ->
-                        String.format(
-                            "%.5f, %.5f · %.1f km/h (±%.0fm)",
-                            s.latitude,
-                            s.longitude,
-                            s.speedKmh,
-                            s.accuracyMeters
-                        )
-                    } ?: "GPS en attente de position"
-                    Text(
-                        text = gpsSummary,
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                syncError?.let { errText ->
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = errText,
-                        color = Color(0xFFF87171),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = unitId,
-                        onValueChange = { unitId = it.uppercase() },
-                        singleLine = true,
-                        label = { Text("Indicatif", fontSize = 11.sp) },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = Color(0xFF38BDF8),
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    OutlinedTextField(
-                        value = crewCountText,
-                        onValueChange = { raw ->
-                            crewCountText = raw.filter { it.isDigit() }.take(2)
-                        },
-                        singleLine = true,
-                        label = { Text("Effectif", fontSize = 11.sp) },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Groups,
-                                contentDescription = null,
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(20.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                                .border(2.dp, Color(currentStatus.colorHex), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_police_op_logo),
+                                contentDescription = "Icône Police OP",
+                                modifier = Modifier.size(32.dp)
                             )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = Color(0xFFF8FAFC),
-                            fontWeight = FontWeight.Bold
-                        ),
-                        modifier = Modifier.width(126.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    statusRows.forEach { pair ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            pair.forEach { status ->
-                                val selected = currentStatus == status
-                                val badgeColor = Color(status.colorHex)
-                                val textColor = if (selected) {
-                                    if (status == PatrolStatus.CONTROLE_ROUTE) Color(0xFF082F49) else Color.White
-                                } else {
-                                    Color(0xFFE2E8F0)
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(if (selected) badgeColor else Color(0xFF162032))
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (selected) badgeColor else Color(0xFF334155),
-                                            shape = RoundedCornerShape(10.dp)
-                                        )
-                                        .clickable {
-                                            currentStatus = status
-                                            onStateChanged(
-                                                unitId,
-                                                crewCount,
-                                                status,
-                                                isTracking,
-                                                selectedEquipment.toList(),
-                                                lastSample
-                                            )
-                                        }
-                                        .padding(horizontal = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = status.label,
-                                        color = textColor,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            if (pair.size == 1) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
                         }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                val isEndOfService = currentStatus == PatrolStatus.FIN_DE_SERVICE && !isTracking
-                OutlinedButton(
-                    onClick = {
-                        currentStatus = PatrolStatus.FIN_DE_SERVICE
-                        isTracking = false
-                        if (sosActive) {
-                            sosActive = false
-                            uploader.clearSosAlert(unitId = unitId, address = sosAddress)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Police OP",
+                                color = Color(0xFFF8FAFC),
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Statut : ${currentStatus.label}",
+                                color = Color(currentStatus.colorHex),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        onEndOfService(
-                            unitId,
-                            crewCount,
-                            selectedEquipment.toList(),
-                            lastSample
-                        )
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (isEndOfService) Color(0xFF475569) else Color(0xFF162032),
-                        contentColor = Color(0xFFF8FAFC)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PowerSettingsNew,
-                        contentDescription = null,
-                        tint = if (isEndOfService) Color(0xFFFBBF24) else Color(0xFF94A3B8),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isEndOfService) "Statut : Fin de service" else "Fin de service",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text(
-                    text = "Matériel embarqué",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    equipmentRows.forEach { pair ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            pair.forEach { item ->
-                                val isSelected = selectedEquipment.contains(item)
-                                Row(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(38.dp)
-                                        .clip(RoundedCornerShape(9.dp))
-                                        .background(
-                                            if (isSelected) Color(0xFF1D4ED8) else Color(0xFF162032)
-                                        )
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF334155),
-                                            shape = RoundedCornerShape(9.dp)
-                                        )
-                                        .clickable {
-                                            if (isSelected) {
-                                                selectedEquipment.remove(item)
-                                            } else {
-                                                selectedEquipment.add(item)
-                                            }
-                                            onStateChanged(
-                                                unitId,
-                                                crewCount,
-                                                currentStatus,
-                                                isTracking,
-                                                selectedEquipment.toList(),
-                                                lastSample
-                                            )
-                                        }
-                                        .padding(horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    if (isSelected) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(5.dp))
-                                    }
-                                    Text(
-                                        text = item,
-                                        color = if (isSelected) Color.White else Color(0xFFCBD5E1),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            if (pair.size == 1) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // BOUTON SOS (DOUBLE TAP DE DÉCLENCHEMENT) AU-DESSUS DES MESSAGES CSU
-                if (!sosActive) {
-                    Button(
-                        onClick = {
-                            if (!sosArmed) {
-                                sosArmed = true
-                            } else {
-                                sosArmed = false
-                                sosActive = true
-                                if (!isTracking) {
-                                    isTracking = true
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Button(
+                            onClick = {
+                                val nextTracking = !isTracking
+                                isTracking = nextTracking
+                                if (nextTracking) {
                                     if (currentStatus == PatrolStatus.FIN_DE_SERVICE) {
                                         currentStatus = PatrolStatus.PATROUILLE
                                     }
@@ -766,139 +369,332 @@ private fun PoliceOpScreen(
                                         currentStatus,
                                         selectedEquipment.toList()
                                     )
-                                }
-                                scope.launch {
-                                    val resolved = resolveStreetAddress(context, lastSample)
-                                    sosAddress = resolved
-                                    uploader.triggerSosAlert(
-                                        unitId = unitId,
-                                        crewCount = crewCount,
-                                        status = currentStatus,
-                                        sample = lastSample,
-                                        address = resolved,
-                                        equipment = selectedEquipment.toList(),
-                                        onError = { err ->
-                                            syncError = err.localizedMessage ?: "Erreur envoi alerte SOS"
-                                        }
+                                } else {
+                                    onRequestStop(
+                                        unitId,
+                                        crewCount,
+                                        currentStatus,
+                                        selectedEquipment.toList(),
+                                        lastSample
                                     )
                                 }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp)
-                            .border(
-                                width = 2.dp,
-                                color = if (sosArmed) Color(0xFFFBBF24) else Color(0xFFFCA5A5),
-                                shape = RoundedCornerShape(12.dp)
-                            ),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (sosArmed) Color(0xFFB91C1C) else Color(0xFFDC2626),
-                            contentColor = Color.White
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = "Alerte SOS",
-                            tint = if (sosArmed) Color(0xFFFDE047) else Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = if (sosArmed) {
-                                "CONFIRMER SOS (TAPER UNE 2E FOIS)"
-                            } else {
-                                "SOS · ALERTE URGENCE (DOUBLE TAP)"
                             },
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(sosPulseColor, RoundedCornerShape(12.dp))
-                            .border(2.dp, Color.White, RoundedCornerShape(12.dp))
-                            .padding(10.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isTracking) Color(0xFFDC2626) else Color(0xFF16A34A),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(10.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.Warning,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "ALERTE SOS EN COURS",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                            }
-                            Button(
-                                onClick = {
-                                    sosActive = false
-                                    sosArmed = false
-                                    uploader.clearSosAlert(
-                                        unitId = unitId,
-                                        address = sosAddress
-                                    )
-                                },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF0F172A),
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = "Lever SOS",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                        if (sosAddress.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Position : $sosAddress",
-                                color = Color(0xFFFEF2F2),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                text = if (isTracking) "Stop" else "Actif",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = Color(0xFF334155))
+                item(key = "gps_and_error") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.GpsFixed,
+                                contentDescription = null,
+                                tint = if (isTracking) Color(0xFF4ADE80) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val gpsSummary = lastSample?.let { s ->
+                                String.format(
+                                    "%.5f, %.5f · %.1f km/h (±%.0fm)",
+                                    s.latitude,
+                                    s.longitude,
+                                    s.speedKmh,
+                                    s.accuracyMeters
+                                )
+                            } ?: "GPS en attente de position"
+                            Text(
+                                text = gpsSummary,
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
 
-                Text(
-                    text = "Messages CSU",
-                    color = Color(0xFF38BDF8),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
+                        syncError?.let { errText ->
+                            Text(
+                                text = errText,
+                                color = Color(0xFFF87171),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
+                item(key = "unit_and_crew") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = unitId,
+                            onValueChange = { unitId = it.uppercase() },
+                            singleLine = true,
+                            label = { Text("Indicatif", fontSize = 11.sp) },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = Color(0xFF38BDF8),
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        OutlinedTextField(
+                            value = crewCountText,
+                            onValueChange = { raw ->
+                                crewCountText = raw.filter { it.isDigit() }.take(2)
+                            },
+                            singleLine = true,
+                            label = { Text("Effectif", fontSize = 11.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Groups,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = Color(0xFFF8FAFC),
+                                fontWeight = FontWeight.Bold
+                            ),
+                            modifier = Modifier.width(126.dp)
+                        )
+                    }
+                }
+
+                item(key = "statuses") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        statusRows.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                pair.forEach { status ->
+                                    val selected = currentStatus == status
+                                    val badgeColor = Color(status.colorHex)
+                                    val textColor = if (selected) {
+                                        if (status == PatrolStatus.CONTROLE_ROUTE) Color(0xFF082F49) else Color.White
+                                    } else {
+                                        Color(0xFFE2E8F0)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (selected) badgeColor else Color(0xFF162032))
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (selected) badgeColor else Color(0xFF334155),
+                                                shape = RoundedCornerShape(10.dp)
+                                            )
+                                            .clickable {
+                                                currentStatus = status
+                                                onStateChanged(
+                                                    unitId,
+                                                    crewCount,
+                                                    status,
+                                                    isTracking,
+                                                    selectedEquipment.toList(),
+                                                    lastSample
+                                                )
+                                            }
+                                            .padding(horizontal = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = status.label,
+                                            color = textColor,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+
+                        val isEndOfService = currentStatus == PatrolStatus.FIN_DE_SERVICE && !isTracking
+                        OutlinedButton(
+                            onClick = {
+                                currentStatus = PatrolStatus.FIN_DE_SERVICE
+                                isTracking = false
+                                onEndOfService(
+                                    unitId,
+                                    crewCount,
+                                    selectedEquipment.toList(),
+                                    lastSample
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isEndOfService) Color(0xFF475569) else Color(0xFF162032),
+                                contentColor = Color(0xFFF8FAFC)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PowerSettingsNew,
+                                contentDescription = null,
+                                tint = if (isEndOfService) Color(0xFFFBBF24) else Color(0xFF94A3B8),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isEndOfService) "Statut : Fin de service" else "Fin de service",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                item(key = "equipment") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Matériel embarqué",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        equipmentRows.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                pair.forEach { item ->
+                                    val isSelected = selectedEquipment.contains(item)
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp)
+                                            .clip(RoundedCornerShape(9.dp))
+                                            .background(
+                                                if (isSelected) Color(0xFF1D4ED8) else Color(0xFF162032)
+                                            )
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) Color(0xFF3B82F6) else Color(0xFF334155),
+                                                shape = RoundedCornerShape(9.dp)
+                                            )
+                                            .clickable {
+                                                if (isSelected) {
+                                                    selectedEquipment.remove(item)
+                                                } else {
+                                                    selectedEquipment.add(item)
+                                                }
+                                                onStateChanged(
+                                                    unitId,
+                                                    crewCount,
+                                                    currentStatus,
+                                                    isTracking,
+                                                    selectedEquipment.toList(),
+                                                    lastSample
+                                                )
+                                            }
+                                            .padding(horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(5.dp))
+                                        }
+                                        Text(
+                                            text = item,
+                                            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item(key = "csu_header") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        HorizontalDivider(color = Color(0xFF334155))
+                        Text(
+                            text = "Messages CSU",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                if (messages.isEmpty()) {
+                    item(key = "csu_empty") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF162032)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "Aucune mission ou message CSU en attente.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                } else {
                     items(messages, key = { it.id }) { msg ->
                         val isAck = localAckIds.contains(msg.id) || !msg.acknowledgedBy.isNullOrBlank()
+                        val ackActor = msg.acknowledgedBy?.takeIf { it.isNotBlank() } ?: unitId
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -928,8 +724,33 @@ private fun PoliceOpScreen(
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (isAck) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CheckCircle,
+                                                contentDescription = null,
+                                                tint = Color(0xFF4ADE80),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = "Validé par $ackActor",
+                                                color = Color(0xFF4ADE80),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                     Button(
                                         onClick = {
                                             if (!isAck) {
@@ -939,32 +760,30 @@ private fun PoliceOpScreen(
                                                     message = msg,
                                                     onError = { err ->
                                                         localAckIds.remove(msg.id)
-                                                        syncError = err.localizedMessage ?: "Erreur lors de la validation"
+                                                        syncError = err.localizedMessage
+                                                            ?: "Erreur lors de la validation"
                                                     }
                                                 )
                                             }
                                         },
                                         enabled = !isAck,
-                                        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
                                         colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (isAck) Color(0xFF1E293B) else Color(0xFF16A34A),
-                                            disabledContainerColor = Color(0xFF1E293B),
+                                            containerColor = Color(0xFF16A34A),
                                             contentColor = Color.White,
-                                            disabledContentColor = Color(0xFF4ADE80)
+                                            disabledContainerColor = Color(0xFF14532D),
+                                            disabledContentColor = Color(0xFF86EFAC)
                                         ),
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        if (isAck) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
-                                            text = if (isAck) "Validé" else "Valider",
-                                            fontSize = 14.sp,
+                                            text = if (isAck) "Validé" else "Valider l'intervention",
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
