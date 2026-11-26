@@ -236,11 +236,25 @@ class FirestoreLocationUploader(
                         if (assignedUnit.isNotEmpty() && assignedUnit.lowercase() != targetUnit) {
                             return@mapNotNull null
                         }
+                        val city = (doc.getString("city") ?: "").trim()
+                        val address = (doc.getString("address") ?: "").trim()
+                        val fullAddress = (doc.getString("fullAddress") ?: "").trim()
+                        val combinedLocation = fullAddress.ifEmpty {
+                            listOf(address, city).filter { it.isNotEmpty() }.joinToString(", ")
+                        }
+                        val rawNotes = (doc.getString("notes") ?: "").trim()
+                        val fullNotes = when {
+                            combinedLocation.isNotEmpty() && rawNotes.isNotEmpty() ->
+                                "Lieu : $combinedLocation\nConsignes : $rawNotes"
+                            combinedLocation.isNotEmpty() ->
+                                "Lieu : $combinedLocation"
+                            else -> rawNotes
+                        }
                         CsuDispatchMessage(
                             id = doc.id,
                             unitId = assignedUnit,
                             title = doc.getString("title") ?: "Message CSU",
-                            notes = doc.getString("notes") ?: "",
+                            notes = fullNotes,
                             acknowledgedBy = doc.getString("acknowledgedBy")
                         )
                     }
@@ -274,7 +288,7 @@ class FirestoreLocationUploader(
                 hashMapOf(
                     "unitId" to cleanUnitId,
                     "type" to "ACK",
-                    "message" to "Validé par $cleanUnitId :${message.title}",
+                    "message" to "Validé par $cleanUnitId : ${message.title}",
                     "createdAt" to FieldValue.serverTimestamp()
                 )
             ).addOnFailureListener(onError)
