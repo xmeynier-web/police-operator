@@ -103,6 +103,112 @@ class FirestoreLocationUploader(
         }
     }
 
+    fun triggerSosAlert(
+        unitId: String,
+        crewCount: Int,
+        status: PatrolStatus,
+        sample: GpsSample?,
+        address: String,
+        equipment: List<String>,
+        onError: (Exception) -> Unit = {}
+    ) {
+        ensureSignedIn(onError = onError) {
+            val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+            val cleanCrewCount = crewCount.coerceAtLeast(1)
+            val resolvedAddress = address.trim().ifEmpty {
+                sample?.let { String.format("%.5f, %.5f", it.latitude, it.longitude) }
+                    ?: "Position GPS en cours d'acquisition"
+            }
+
+            val docRef = firestore.collection("live_positions").document(cleanUnitId)
+            val payload = hashMapOf<String, Any>(
+                "unitId" to cleanUnitId,
+                "crewCount" to cleanCrewCount,
+                "operationalStatus" to status.code,
+                "operationalStatusLabel" to status.label,
+                "isTracking" to true,
+                "speedKmh" to (sample?.speedKmh ?: 0.0),
+                "equipment" to equipment,
+                "sosActive" to true,
+                "sosAddress" to resolvedAddress,
+                "sosTriggeredAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (sample != null) {
+                payload["latitude"] = sample.latitude
+                payload["longitude"] = sample.longitude
+            }
+
+            docRef.set(payload, SetOptions.merge())
+                .addOnFailureListener(onError)
+
+            val coordsSuffix = sample?.let {
+                String.format(" (GPS : %.5f, %.5f)", it.latitude, it.longitude)
+            } ?: ""
+
+            firestore.collection("mci_logs").add(
+                hashMapOf(
+                    "unitId" to cleanUnitId,
+                    "type" to "SOS",
+                    "sosAddress" to resolvedAddress,
+                    "message" to "ALERTE SOS · $cleanUnitId ($cleanCrewCount agent${if (cleanCrewCount > 1) "s" else ""}) · Adresse : $resolvedAddress$coordsSuffix",
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            ).addOnFailureListener(onError)
+        }
+    }
+
+    fun updateSosAddress(
+        unitId: String,
+        sample: GpsSample,
+        address: String,
+        onError: (Exception) -> Unit = {}
+    ) {
+        ensureSignedIn(onError = onError) {
+            val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+            val resolvedAddress = address.trim().ifEmpty {
+                String.format("%.5f, %.5f", sample.latitude, sample.longitude)
+            }
+            firestore.collection("live_positions").document(cleanUnitId).set(
+                hashMapOf(
+                    "latitude" to sample.latitude,
+                    "longitude" to sample.longitude,
+                    "sosAddress" to resolvedAddress,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).addOnFailureListener(onError)
+        }
+    }
+
+    fun clearSosAlert(
+        unitId: String,
+        address: String,
+        onError: (Exception) -> Unit = {}
+    ) {
+        ensureSignedIn(onError = onError) {
+            val cleanUnitId = unitId.trim().ifEmpty { "ALPHA 1" }
+            firestore.collection("live_positions").document(cleanUnitId).set(
+                hashMapOf(
+                    "sosActive" to false,
+                    "sosClearedAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).addOnFailureListener(onError)
+
+            val locText = if (address.isNotBlank()) " · Dernière adresse : $address" else ""
+            firestore.collection("mci_logs").add(
+                hashMapOf(
+                    "unitId" to cleanUnitId,
+                    "type" to "SOS_END",
+                    "message" to "FIN ALERTE SOS · $cleanUnitId$locText",
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            ).addOnFailureListener(onError)
+        }
+    }
+
     fun observeCsuMessages(
         unitId: String,
         onUpdate: (List<CsuDispatchMessage>) -> Unit,
@@ -168,7 +274,7 @@ class FirestoreLocationUploader(
                 hashMapOf(
                     "unitId" to cleanUnitId,
                     "type" to "ACK",
-                    "message" to "Validé par $cleanUnitId : ${message.title}",
+                    "message" to "Validé par $cleanUnitId :${message.title}",
                     "createdAt" to FieldValue.serverTimestamp()
                 )
             ).addOnFailureListener(onError)
