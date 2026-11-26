@@ -14,26 +14,18 @@ enum class PatrolStatus(
     FIN_DE_SERVICE("FIN_DE_SERVICE", "Fin de service", 0xFF475569);
 
     companion object {
-        fun fromCode(code: String?): PatrolStatus {
-            val normalized = code?.trim()?.uppercase()
+        fun fromCode(raw: String?): PatrolStatus {
+            val normalized = raw?.trim()?.uppercase()
             return entries.firstOrNull { it.code == normalized } ?: PATROUILLE
         }
     }
 }
 
-val DEFAULT_EQUIPMENT_LIST = listOf(
-    "Caméra piéton",
-    "Terminal / Radio",
-    "Éthylotest / Dépistage",
-    "Trousse secours / DSA",
-    "Cônes / Signalisation"
-)
-
 data class GpsSample(
     val latitude: Double,
     val longitude: Double,
-    val speedKmh: Double = 0.0,
-    val accuracyMeters: Float = 0f,
+    val speedKmh: Double,
+    val accuracyMeters: Float,
     val timestampMillis: Long = System.currentTimeMillis()
 )
 
@@ -43,4 +35,15 @@ data class CsuDispatchMessage(
     val title: String,
     val notes: String,
     val acknowledgedBy: String? = null
+)
+
+val DEFAULT_EQUIPMENT_LIST = listOf(
+    "Caméra piéton",
+    "Terminal / Radio",
+    "Éthylotest / Dépistage",
+    "Trousse secours / DAE",
+    "Cônes / Signalisation",
+    "Lacrymo",
+    "PIE",
+    "Stop-Stick"
 )
