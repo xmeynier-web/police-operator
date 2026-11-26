@@ -235,9 +235,7 @@ private fun PoliceOpScreen(
     var lastSample by remember { mutableStateOf<GpsSample?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
 
-    val selectedEquipment = remember {
-        mutableStateListOf<String>().apply { addAll(DEFAULT_EQUIPMENT_LIST) }
-    }
+    val selectedEquipment = remember { mutableStateListOf<String>() }
     val messages = remember { mutableStateListOf<CsuDispatchMessage>() }
     val localAckIds = remember { mutableStateListOf<String>() }
 
