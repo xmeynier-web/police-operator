@@ -12,7 +12,6 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.xavier.policeoperator.data.FirestoreLocationUploader
 import com.xavier.policeoperator.location.ActiveLocationTracker
-import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 import com.xavier.policeoperator.ui.MainActivity
@@ -25,7 +24,7 @@ class LocationService : Service() {
     private var unitId: String = "ALPHA 1"
     private var crewCount: Int = 2
     private var status: PatrolStatus = PatrolStatus.PATROUILLE
-    private var equipment: List<String> = DEFAULT_EQUIPMENT_LIST
+    private var equipment: List<String> = emptyList()
     private var lastSample: GpsSample? = null
 
     override fun onCreate() {
@@ -51,7 +50,7 @@ class LocationService : Service() {
                 unitId = intent.getStringExtra(EXTRA_UNIT_ID)?.trim()?.ifEmpty { "ALPHA 1" } ?: "ALPHA 1"
                 crewCount = intent.getIntExtra(EXTRA_CREW_COUNT, 2).coerceAtLeast(1)
                 status = PatrolStatus.fromCode(intent.getStringExtra(EXTRA_STATUS_CODE))
-                equipment = intent.getStringArrayListExtra(EXTRA_EQUIPMENT)?.toList() ?: DEFAULT_EQUIPMENT_LIST
+                equipment = intent.getStringArrayListExtra(EXTRA_EQUIPMENT)?.toList() ?: emptyList()
 
                 startForeground(NOTIFICATION_ID, buildNotification())
                 tracker?.start()
