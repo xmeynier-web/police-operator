@@ -7,7 +7,6 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.xavier.policeoperator.model.CsuDispatchMessage
-import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 
@@ -63,7 +62,7 @@ class FirestoreLocationUploader(
         status: PatrolStatus,
         isTracking: Boolean,
         sample: GpsSample?,
-        equipment: List<String> = DEFAULT_EQUIPMENT_LIST,
+        equipment: List<String> = emptyList(),
         recordHistory: Boolean = false,
         onError: (Exception) -> Unit = {}
     ) {
