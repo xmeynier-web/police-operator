@@ -209,7 +209,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        tracker?.stop()
+        if (isFinishing) {
+            tracker?.stop()
+        }
         onSampleCallback = null
         super.onDestroy()
     }
