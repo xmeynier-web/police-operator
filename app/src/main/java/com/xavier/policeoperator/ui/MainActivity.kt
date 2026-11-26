@@ -231,6 +231,7 @@ private fun PoliceOpScreen(
     var currentStatus by remember { mutableStateOf(PatrolStatus.PATROUILLE) }
     var isTracking by remember { mutableStateOf(false) }
     var lastSample by remember { mutableStateOf<GpsSample?>(null) }
+    var syncError by remember { mutableStateOf<String?>(null) }
 
     val selectedEquipment = remember {
         mutableStateListOf<String>().apply { addAll(DEFAULT_EQUIPMENT_LIST) }
@@ -261,8 +262,12 @@ private fun PoliceOpScreen(
         val reg = uploader.observeCsuMessages(
             unitId = unitId,
             onUpdate = { list ->
+                syncError = null
                 messages.clear()
                 messages.addAll(list)
+            },
+            onError = { err ->
+                syncError = err.localizedMessage ?: "Erreur de synchronisation CSU"
             }
         )
         onDispose { reg.remove() }
@@ -276,7 +281,10 @@ private fun PoliceOpScreen(
             isTracking = false,
             sample = null,
             equipment = selectedEquipment.toList(),
-            recordHistory = false
+            recordHistory = false,
+            onError = { err ->
+                syncError = err.localizedMessage ?: "Erreur d'authentification ou Firestore"
+            }
         )
     }
 
@@ -295,7 +303,6 @@ private fun PoliceOpScreen(
                     .fillMaxSize()
                     .widthIn(max = 580.dp)
             ) {
-                // 1. En-tête : logo, Police OP, statut courant, bouton Actif / Stop
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -378,7 +385,6 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 2. Bandeau géolocalisation en haut
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -413,9 +419,20 @@ private fun PoliceOpScreen(
                     )
                 }
 
+                syncError?.let { errText ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = errText,
+                        color = Color(0xFFF87171),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 3. Indicatif équipage + case effectif à bord (nombre d'agents)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -459,7 +476,6 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 4. Boutons de statuts en 2 colonnes homogènes de même largeur
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -521,7 +537,6 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 5. Bouton dédié Fin de service (fait aussi office de statut)
                 val isEndOfService = currentStatus == PatrolStatus.FIN_DE_SERVICE && !isTracking
                 OutlinedButton(
                     onClick = {
@@ -559,7 +574,6 @@ private fun PoliceOpScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 6. Matériel embarqué en 2 colonnes homogènes de même largeur
                 Text(
                     text = "Matériel embarqué",
                     color = Color(0xFF38BDF8),
@@ -639,7 +653,6 @@ private fun PoliceOpScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(color = Color(0xFF334155))
 
-                // 7. Messages CSU
                 Text(
                     text = "Messages CSU",
                     color = Color(0xFF38BDF8),
@@ -689,7 +702,14 @@ private fun PoliceOpScreen(
                                         onClick = {
                                             if (!isAck) {
                                                 localAckIds.add(msg.id)
-                                                uploader.acknowledgeMessage(unitId, msg)
+                                                uploader.acknowledgeMessage(
+                                                    unitId = unitId,
+                                                    message = msg,
+                                                    onError = { err ->
+                                                        localAckIds.remove(msg.id)
+                                                        syncError = err.localizedMessage ?: "Erreur lors de la validation"
+                                                    }
+                                                )
                                             }
                                         },
                                         enabled = !isAck,
