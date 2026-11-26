@@ -1,13 +1,20 @@
 package com.xavier.policeoperator.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +43,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -54,11 +62,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -74,6 +84,13 @@ import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 import com.xavier.policeoperator.service.LocationService
+import java.util.Locale
+import kotlin.coroutines.resume
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -219,6 +236,42 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private suspend fun resolveStreetAddress(context: Context, sample: GpsSample?): String {
+    if (sample == null) return ""
+    val fallback = String.format(Locale.FRANCE, "%.5f, %.5f", sample.latitude, sample.longitude)
+    if (!Geocoder.isPresent()) return fallback
+
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            val geocoder = Geocoder(context, Locale.FRANCE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                suspendCancellableCoroutine { cont ->
+                    geocoder.getFromLocation(
+                        sample.latitude,
+                        sample.longitude,
+                        1,
+                        object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                                val line = addresses.firstOrNull()?.getAddressLine(0)?.trim()
+                                cont.resume(if (!line.isNullOrEmpty()) line else fallback)
+                            }
+
+                            override fun onError(errorMessage: String?) {
+                                cont.resume(fallback)
+                            }
+                        }
+                    )
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val list = geocoder.getFromLocation(sample.latitude, sample.longitude, 1)
+                val line = list?.firstOrNull()?.getAddressLine(0)?.trim()
+                if (!line.isNullOrEmpty()) line else fallback
+            }
+        }.getOrDefault(fallback)
+    }
+}
+
 @Composable
 private fun PoliceOpScreen(
     uploader: FirestoreLocationUploader,
@@ -228,6 +281,9 @@ private fun PoliceOpScreen(
     onStateChanged: (String, Int, PatrolStatus, Boolean, List<String>, GpsSample?) -> Unit,
     bindSampleListener: (((GpsSample) -> Unit)?) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var unitId by remember { mutableStateOf("ALPHA 1") }
     var crewCountText by remember { mutableStateOf("2") }
     val crewCount = crewCountText.toIntOrNull()?.coerceAtLeast(1) ?: 1
@@ -236,6 +292,10 @@ private fun PoliceOpScreen(
     var isTracking by remember { mutableStateOf(false) }
     var lastSample by remember { mutableStateOf<GpsSample?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
+
+    var sosArmed by remember { mutableStateOf(false) }
+    var sosActive by remember { mutableStateOf(false) }
+    var sosAddress by remember { mutableStateOf("") }
 
     val selectedEquipment = remember { mutableStateListOf<String>() }
     val messages = remember { mutableStateListOf<CsuDispatchMessage>() }
@@ -251,9 +311,28 @@ private fun PoliceOpScreen(
         DEFAULT_EQUIPMENT_LIST.chunked(2)
     }
 
+    LaunchedEffect(sosArmed) {
+        if (sosArmed) {
+            delay(4000L)
+            sosArmed = false
+        }
+    }
+
     DisposableEffect(Unit) {
         bindSampleListener { sample ->
+            val hadNoSample = (lastSample == null)
             lastSample = sample
+            if (sosActive && hadNoSample) {
+                scope.launch {
+                    val resolved = resolveStreetAddress(context, sample)
+                    sosAddress = resolved
+                    uploader.updateSosAddress(
+                        unitId = unitId,
+                        sample = sample,
+                        address = resolved
+                    )
+                }
+            }
         }
         onDispose {
             bindSampleListener(null)
@@ -290,6 +369,17 @@ private fun PoliceOpScreen(
             }
         )
     }
+
+    val sosPulseTransition = rememberInfiniteTransition(label = "sos_pulse")
+    val sosPulseColor by sosPulseTransition.animateColor(
+        initialValue = Color(0xFFDC2626),
+        targetValue = Color(0xFF7F1D1D),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 550),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sos_color"
+    )
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -552,6 +642,11 @@ private fun PoliceOpScreen(
                             onClick = {
                                 currentStatus = PatrolStatus.FIN_DE_SERVICE
                                 isTracking = false
+                                if (sosActive) {
+                                    sosActive = false
+                                    sosArmed = false
+                                    uploader.clearSosAlert(unitId = unitId, address = sosAddress)
+                                }
                                 onEndOfService(
                                     unitId,
                                     crewCount,
@@ -657,6 +752,95 @@ private fun PoliceOpScreen(
                                     Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
+                        }
+                    }
+                }
+
+                item(key = "sos_button") {
+                    val sosBg = when {
+                        sosActive -> sosPulseColor
+                        sosArmed -> Color(0xFFB91C1C)
+                        else -> Color(0xFF991B1B)
+                    }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (sosActive) {
+                                    sosActive = false
+                                    sosArmed = false
+                                    uploader.clearSosAlert(unitId = unitId, address = sosAddress)
+                                } else if (!sosArmed) {
+                                    sosArmed = true
+                                } else {
+                                    sosArmed = false
+                                    sosActive = true
+                                    isTracking = true
+                                    if (currentStatus == PatrolStatus.FIN_DE_SERVICE) {
+                                        currentStatus = PatrolStatus.PATROUILLE
+                                    }
+                                    onRequestStart(
+                                        unitId,
+                                        crewCount,
+                                        currentStatus,
+                                        selectedEquipment.toList()
+                                    )
+                                    scope.launch {
+                                        val resolved = resolveStreetAddress(context, lastSample)
+                                        sosAddress = resolved
+                                        uploader.triggerSosAlert(
+                                            unitId = unitId,
+                                            crewCount = crewCount,
+                                            status = currentStatus,
+                                            sample = lastSample,
+                                            address = resolved,
+                                            equipment = selectedEquipment.toList(),
+                                            onError = { err ->
+                                                syncError = err.localizedMessage
+                                                    ?: "Erreur lors de l'envoi de l'alerte SOS"
+                                            }
+                                        )
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = sosBg,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    sosActive -> "SOS ACTIF · APPUYER POUR ARRÊTER"
+                                    sosArmed -> "CONFIRMER SOS (APPUYER ENCORE)"
+                                    else -> "SOS · ALERTE URGENCE (DOUBLE APPU)"
+                                },
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        if (sosActive && sosAddress.isNotBlank()) {
+                            Text(
+                                text = "Position SOS transmise : $sosAddress",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                 }
