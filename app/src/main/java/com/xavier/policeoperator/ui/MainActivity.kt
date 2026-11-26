@@ -1,13 +1,20 @@
 package com.xavier.policeoperator.ui
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Geocoder
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +41,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,11 +60,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +82,13 @@ import com.xavier.policeoperator.model.DEFAULT_EQUIPMENT_LIST
 import com.xavier.policeoperator.model.GpsSample
 import com.xavier.policeoperator.model.PatrolStatus
 import com.xavier.policeoperator.service.LocationService
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class MainActivity : ComponentActivity() {
 
@@ -217,6 +234,42 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private suspend fun resolveStreetAddress(context: Context, sample: GpsSample?): String {
+    if (sample == null) return ""
+    val fallback = String.format(Locale.FRANCE, "%.5f, %.5f", sample.latitude, sample.longitude)
+    if (!Geocoder.isPresent()) return fallback
+
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            val geocoder = Geocoder(context, Locale.FRANCE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                suspendCancellableCoroutine { cont ->
+                    geocoder.getFromLocation(
+                        sample.latitude,
+                        sample.longitude,
+                        1,
+                        object : Geocoder.GeocodeListener {
+                            override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                                val line = addresses.firstOrNull()?.getAddressLine(0)?.trim()
+                                cont.resume(if (!line.isNullOrEmpty()) line else fallback)
+                            }
+
+                            override fun onError(errorMessage: String?) {
+                                cont.resume(fallback)
+                            }
+                        }
+                    )
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val list = geocoder.getFromLocation(sample.latitude, sample.longitude, 1)
+                val line = list?.firstOrNull()?.getAddressLine(0)?.trim()
+                if (!line.isNullOrEmpty()) line else fallback
+            }
+        }.getOrDefault(fallback)
+    }
+}
+
 @Composable
 private fun PoliceOpScreen(
     uploader: FirestoreLocationUploader,
@@ -226,6 +279,9 @@ private fun PoliceOpScreen(
     onStateChanged: (String, Int, PatrolStatus, Boolean, List<String>, GpsSample?) -> Unit,
     bindSampleListener: (((GpsSample) -> Unit)?) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var unitId by remember { mutableStateOf("ALPHA 1") }
     var crewCountText by remember { mutableStateOf("2") }
     val crewCount = crewCountText.toIntOrNull()?.coerceAtLeast(1) ?: 1
@@ -234,6 +290,10 @@ private fun PoliceOpScreen(
     var isTracking by remember { mutableStateOf(false) }
     var lastSample by remember { mutableStateOf<GpsSample?>(null) }
     var syncError by remember { mutableStateOf<String?>(null) }
+
+    var sosArmed by remember { mutableStateOf(false) }
+    var sosActive by remember { mutableStateOf(false) }
+    var sosAddress by remember { mutableStateOf("") }
 
     val selectedEquipment = remember { mutableStateListOf<String>() }
     val messages = remember { mutableStateListOf<CsuDispatchMessage>() }
@@ -249,9 +309,28 @@ private fun PoliceOpScreen(
         DEFAULT_EQUIPMENT_LIST.chunked(2)
     }
 
+    LaunchedEffect(sosArmed) {
+        if (sosArmed) {
+            delay(4000L)
+            sosArmed = false
+        }
+    }
+
     DisposableEffect(Unit) {
         bindSampleListener { sample ->
+            val hadNoSample = (lastSample == null)
             lastSample = sample
+            if (sosActive && hadNoSample) {
+                scope.launch {
+                    val resolved = resolveStreetAddress(context, sample)
+                    sosAddress = resolved
+                    uploader.updateSosAddress(
+                        unitId = unitId,
+                        sample = sample,
+                        address = resolved
+                    )
+                }
+            }
         }
         onDispose {
             bindSampleListener(null)
@@ -287,6 +366,17 @@ private fun PoliceOpScreen(
             }
         )
     }
+
+    val sosPulseTransition = rememberInfiniteTransition(label = "sos_pulse")
+    val sosPulseColor by sosPulseTransition.animateColor(
+        initialValue = Color(0xFFDC2626),
+        targetValue = Color(0xFF7F1D1D),
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 550),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "sos_color"
+    )
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -542,6 +632,10 @@ private fun PoliceOpScreen(
                     onClick = {
                         currentStatus = PatrolStatus.FIN_DE_SERVICE
                         isTracking = false
+                        if (sosActive) {
+                            sosActive = false
+                            uploader.clearSosAlert(unitId = unitId, address = sosAddress)
+                        }
                         onEndOfService(
                             unitId,
                             crewCount,
@@ -551,7 +645,7 @@ private fun PoliceOpScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(46.dp),
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (isEndOfService) Color(0xFF475569) else Color(0xFF162032),
@@ -595,7 +689,7 @@ private fun PoliceOpScreen(
                                 Row(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(40.dp)
+                                        .height(38.dp)
                                         .clip(RoundedCornerShape(9.dp))
                                         .background(
                                             if (isSelected) Color(0xFF1D4ED8) else Color(0xFF162032)
@@ -646,6 +740,144 @@ private fun PoliceOpScreen(
                             if (pair.size == 1) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // BOUTON SOS (DOUBLE TAP DE DÉCLENCHEMENT) AU-DESSUS DES MESSAGES CSU
+                if (!sosActive) {
+                    Button(
+                        onClick = {
+                            if (!sosArmed) {
+                                sosArmed = true
+                            } else {
+                                sosArmed = false
+                                sosActive = true
+                                if (!isTracking) {
+                                    isTracking = true
+                                    if (currentStatus == PatrolStatus.FIN_DE_SERVICE) {
+                                        currentStatus = PatrolStatus.PATROUILLE
+                                    }
+                                    onRequestStart(
+                                        unitId,
+                                        crewCount,
+                                        currentStatus,
+                                        selectedEquipment.toList()
+                                    )
+                                }
+                                scope.launch {
+                                    val resolved = resolveStreetAddress(context, lastSample)
+                                    sosAddress = resolved
+                                    uploader.triggerSosAlert(
+                                        unitId = unitId,
+                                        crewCount = crewCount,
+                                        status = currentStatus,
+                                        sample = lastSample,
+                                        address = resolved,
+                                        equipment = selectedEquipment.toList(),
+                                        onError = { err ->
+                                            syncError = err.localizedMessage ?: "Erreur envoi alerte SOS"
+                                        }
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .border(
+                                width = 2.dp,
+                                color = if (sosArmed) Color(0xFFFBBF24) else Color(0xFFFCA5A5),
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (sosArmed) Color(0xFFB91C1C) else Color(0xFFDC2626),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = "Alerte SOS",
+                            tint = if (sosArmed) Color(0xFFFDE047) else Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = if (sosArmed) {
+                                "CONFIRMER SOS (TAPER UNE 2E FOIS)"
+                            } else {
+                                "SOS · ALERTE URGENCE (DOUBLE TAP)"
+                            },
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(sosPulseColor, RoundedCornerShape(12.dp))
+                            .border(2.dp, Color.White, RoundedCornerShape(12.dp))
+                            .padding(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.Warning,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "ALERTE SOS EN COURS",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            Button(
+                                onClick = {
+                                    sosActive = false
+                                    sosArmed = false
+                                    uploader.clearSosAlert(
+                                        unitId = unitId,
+                                        address = sosAddress
+                                    )
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF0F172A),
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "Lever SOS",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        if (sosAddress.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Position : $sosAddress",
+                                color = Color(0xFFFEF2F2),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
